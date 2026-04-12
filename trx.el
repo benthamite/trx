@@ -675,6 +675,14 @@ METHOD, ARGUMENTS, and TAG are the same as in `trx-request'."
   (let ((torrents (cdr (assq 'torrents response))))
     (and (< 0 (length torrents)) torrents)))
 
+(defun trx-current-torrent ()
+  "Return the alist for the current torrent from `trx-torrent-vector'."
+  (elt trx-torrent-vector 0))
+
+(defun trx-current-torrent-from (response)
+  "Return the first torrent alist from RESPONSE."
+  (elt (trx-torrents response) 0))
+
 (defun trx-unique-labels (torrents)
   "Return a list of unique labels from TORRENTS."
   (let (labels res)
@@ -805,7 +813,7 @@ disable the limit."
 
 (defun trx-torrent-honors-speed-limits-p ()
   "Return non-nil if torrent honors session speed limits, otherwise nil."
-  (eq t (cdr (assq 'honorsSessionLimits (elt trx-torrent-vector 0)))))
+  (eq t (cdr (assq 'honorsSessionLimits (trx-current-torrent)))))
 
 (defun trx-refresh-session-cache ()
   "Update `trx-session-cache' from the Transmission daemon."
@@ -919,7 +927,7 @@ NOW is a time, defaulting to `current-time'."
   "Return the \"trackerStats\" array for torrent id ID."
   (let* ((arguments `(:ids ,id :fields ["trackerStats"]))
          (response (trx-request "torrent-get" arguments)))
-    (cdr (assq 'trackerStats (elt (trx-torrents response) 0)))))
+    (cdr (assq 'trackerStats (trx-current-torrent-from response)))))
 
 (defun trx-unique-announce-urls ()
   "Return a list of unique announce URLs from all current torrents."
@@ -989,7 +997,7 @@ NOW is a time, defaulting to `current-time'."
 (defun trx-files-file-at-point ()
   "Return the absolute path of the torrent file at point, or nil.
 If the file named \"foo\" does not exist, try \"foo.part\" before returning."
-  (let* ((dir (cdr (assq 'downloadDir (elt trx-torrent-vector 0))))
+  (let* ((dir (cdr (assq 'downloadDir (trx-current-torrent))))
          (base (or (and dir (cdr (assq 'name (tabulated-list-get-id))))
                    (user-error "No file at point")))
          (filename (and base (expand-file-name base dir))))
@@ -1469,30 +1477,33 @@ When called with a prefix UNLINK, also unlink torrent data on disk."
 (defun trx-set-torrent-download (ids)
   "Set download limit of selected torrent(s) in kB/s."
   (trx-interactive (list ids))
-  (if (cdr ids)
-      (let ((prompt "Set torrents' download limit: "))
-        (trx-throttle-torrent ids :downloadLimit (read-number prompt)))
-    (trx-request-async
-     (lambda (response)
-       (let-alist (elt (trx-torrents response) 0)
-         (let* ((s (if (eq t .downloadLimited) (format "%d kB/s" .downloadLimit) "disabled"))
-                (prompt (concat "Set torrent's download limit (" s "): ")))
-           (trx-throttle-torrent ids :downloadLimit (read-number prompt)))))
-     "torrent-get" `(:ids ,ids :fields ["downloadLimit" "downloadLimited"]))))
+  (trx--set-torrent-speed-limit ids "download"))
 
 (defun trx-set-torrent-upload (ids)
   "Set upload limit of selected torrent(s) in kB/s."
   (trx-interactive (list ids))
-  (if (cdr ids)
-      (let ((prompt "Set torrents' upload limit: "))
-        (trx-throttle-torrent ids :uploadLimit (read-number prompt)))
-    (trx-request-async
-     (lambda (response)
-       (let-alist (elt (trx-torrents response) 0)
-         (let* ((s (if (eq t .uploadLimited) (format "%d kB/s" .uploadLimit) "disabled"))
-                (prompt (concat "Set torrent's upload limit (" s "): ")))
-           (trx-throttle-torrent ids :uploadLimit (read-number prompt)))))
-     "torrent-get" `(:ids ,ids :fields ["uploadLimit" "uploadLimited"]))))
+  (trx--set-torrent-speed-limit ids "upload"))
+
+(defun trx--set-torrent-speed-limit (ids direction)
+  "Set speed limit for IDS in DIRECTION (\"download\" or \"upload\")."
+  (let ((limit-key (intern (concat ":" direction "Limit")))
+        (limited-field (concat direction "Limited"))
+        (limit-field (concat direction "Limit")))
+    (if (cdr ids)
+        (trx-throttle-torrent
+         ids limit-key
+         (read-number (format "Set torrents' %s limit: " direction)))
+      (trx-request-async
+       (lambda (response)
+         (let* ((torrent (trx-current-torrent-from response))
+                (limited (eq t (cdr (assq (intern limited-field) torrent))))
+                (current (cdr (assq (intern limit-field) torrent)))
+                (status (if limited (format "%d kB/s" current) "disabled"))
+                (prompt (format "Set torrent's %s limit (%s): "
+                                direction status)))
+           (trx-throttle-torrent ids limit-key (read-number prompt))))
+       "torrent-get"
+       `(:ids ,ids :fields ,(vector limit-field limited-field))))))
 
 (defun trx-set-torrent-ratio (ids mode limit)
   "Set seed ratio limit of selected torrent(s)."
@@ -1512,11 +1523,11 @@ When called with a prefix UNLINK, also unlink torrent data on disk."
   (when ids
     (trx-request-async
      (lambda (response)
-       (let* ((torrents (trx-torrents response))
-              (honor (pcase (cdr (assq 'honorsSessionLimits (elt torrents 0)))
-                       (:json-false t) (_ :json-false))))
+       (let ((honor (pcase (cdr (assq 'honorsSessionLimits
+                                      (trx-current-torrent-from response)))
+                      (:json-false t) (_ :json-false))))
          (trx-request-async nil "torrent-set"
-                                     `(:ids ,ids :honorsSessionLimits ,honor))))
+                            `(:ids ,ids :honorsSessionLimits ,honor))))
      "torrent-get" `(:ids ,ids :fields ["honorsSessionLimits"]))))
 
 (defun trx-toggle (ids)
@@ -1525,8 +1536,8 @@ When called with a prefix UNLINK, also unlink torrent data on disk."
   (when ids
     (trx-request-async
      (lambda (response)
-       (let* ((torrents (trx-torrents response))
-              (status (and torrents (cdr (assq 'status (elt torrents 0)))))
+       (let* ((torrent (trx-current-torrent-from response))
+              (status (and torrent (cdr (assq 'status torrent))))
               (method (and status
                            (if (zerop status) "torrent-start" "torrent-stop"))))
          (when method (trx-request-async nil method (list :ids ids)))))
@@ -1885,7 +1896,7 @@ With a prefix argument, use the absolute file name."
 (defun trx-copy-magnet ()
   "Copy magnet link of current torrent."
   (interactive)
-  (let ((magnet (cdr (assq 'magnetLink (elt trx-torrent-vector 0)))))
+  (let ((magnet (cdr (assq 'magnetLink (trx-current-torrent)))))
     (when magnet
       (kill-new magnet)
       (message "Copied %s" magnet))))
@@ -2262,7 +2273,7 @@ matches labels; prefix `!' negates."
          (response (trx-request "torrent-get" arguments)))
     (setq trx-torrent-vector (trx-torrents response)))
   (trx--set-default-directory)
-  (let* ((files (trx-files-index (elt trx-torrent-vector 0)))
+  (let* ((files (trx-files-index (trx-current-torrent)))
          (prefix (trx-files-prefix files)))
     (trx-do-entries files
       (propertize (format "%d%%" (trx-percent .bytesCompleted .length))
@@ -2290,7 +2301,7 @@ matches labels; prefix `!' negates."
     (setq trx-torrent-vector (trx-torrents response)))
   (trx--set-default-directory)
   (erase-buffer)
-  (let-alist (elt trx-torrent-vector 0)
+  (let-alist (trx-current-torrent)
     (trx-insert-each-when
       (format "ID: %d" .id)
       (concat "Name: " .name)
@@ -2332,7 +2343,7 @@ matches labels; prefix `!' negates."
   (let* ((arguments `(:ids ,id :fields ["peers"]))
          (response (trx-request "torrent-get" arguments)))
     (setq trx-torrent-vector (trx-torrents response)))
-  (trx-do-entries (cdr (assq 'peers (elt trx-torrent-vector 0)))
+  (trx-do-entries (cdr (assq 'peers (trx-current-torrent)))
     (propertize .address 'font-lock-face 'trx-peer-address)
     .flagStr
     (propertize (format "%d%%" (trx-percent .progress 1.0))
@@ -2349,7 +2360,7 @@ matches labels; prefix `!' negates."
 
 (defun trx--set-default-directory ()
   "Set `default-directory' from the torrent's download directory."
-  (let ((dir (cdr (assq 'downloadDir (elt trx-torrent-vector 0)))))
+  (let ((dir (cdr (assq 'downloadDir (trx-current-torrent)))))
     (when (and dir (file-directory-p dir))
       (setq default-directory (file-name-as-directory dir)))))
 
