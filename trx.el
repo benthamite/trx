@@ -90,9 +90,9 @@
                  (integer :tag "Port"))
   :link '(function-link make-network-process))
 
-(defcustom trx-rpc-path "/trx/rpc"
+(defcustom trx-rpc-path "/transmission/rpc"
   "Path to the Transmission session RPC interface."
-  :type '(choice (const :tag "Default" "/trx/rpc")
+  :type '(choice (const :tag "Default" "/transmission/rpc")
                  (string :tag "Other path")))
 
 (defcustom trx-rpc-auth nil
@@ -292,7 +292,7 @@ caching built in or is otherwise slow."
   "List of \"torrent-set\" method arguments for operating on files.")
 
 (defvar trx-session-id nil
-  "The \"X-Trx-Session-Id\" header value.")
+  "The \"X-Transmission-Session-Id\" header value.")
 
 (defvar trx-add-history nil
   "Default history list for `trx-add'.")
@@ -307,7 +307,7 @@ caching built in or is otherwise slow."
   "The SHA-1 torrent info hash.")
 
 (define-error 'trx-conflict
-  "Wrong or missing header \"X-Trx-Session-Id\"")
+  "Wrong or missing header \"X-Transmission-Session-Id\"")
 
 (define-error 'trx-unauthorized
   "Unauthorized user.  Check `trx-rpc-auth'")
@@ -352,7 +352,7 @@ caching built in or is otherwise slow."
 (defun trx--status ()
   "Check the HTTP status code.
 A 409 response from a Transmission session includes the
-\"X-Trx-Session-Id\" header.  If a 409 is received,
+\"X-Transmission-Session-Id\" header.  If a 409 is received,
 update `trx-session-id' and signal the error."
   (goto-char (point-min))
   (forward-char 5) ; skip "HTTP/"
@@ -368,7 +368,7 @@ update `trx-session-id' and signal the error."
       ((or 301 404 405) (signal 'trx-wrong-rpc-path (list status)))
       (401 (signal 'trx-unauthorized (list status)))
       (403 (signal 'trx-failure (list status)))
-      (409 (when (search-forward "X-Trx-Session-Id: ")
+      (409 (when (search-forward "X-Transmission-Session-Id: ")
              (setq trx-session-id (read buffer))
              (signal 'trx-conflict (list status))))
       (421 (signal 'trx-misdirected (list trx-host))))))
@@ -395,7 +395,7 @@ and port default to `trx-host' and
   "Send to PROCESS an HTTP POST request containing CONTENT."
   (with-current-buffer (process-buffer process)
     (erase-buffer))
-  (let ((headers (list (cons "X-Trx-Session-Id" trx-session-id)
+  (let ((headers (list (cons "X-Transmission-Session-Id" trx-session-id)
                        (cons "Host" trx-host) ; CVE-2018-5702
                        (cons "Content-length" (string-bytes content)))))
     (let ((auth (trx--auth-string)))

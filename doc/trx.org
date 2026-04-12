@@ -1,0 +1,23 @@
+#+title: trx
+#+subtitle: Emacs interface for the Transmission BitTorrent client
+#+author: Mark Oteiza, Pablo Stafforini
+
+* Overview
+
+=trx= is a fork of [[https://github.com/holomorph/transmission][transmission.el]], providing an Emacs interface for the [[https://transmissionbt.com/][Transmission]] BitTorrent client.
+
+Entry points are =M-x trx= (torrent list) and =M-x trx-add= (add a torrent).
+
+* Usage
+
+- =M-x trx= :: Open the torrent list.
+- =M-x trx-add= :: Add a torrent by URL, magnet link, info hash, or file path.
+
+From the torrent list:
+- =RET= :: Open file list for torrent at point.
+- =i= :: Open torrent info.
+- =e= :: Open peer list.
+- =m= :: Mark torrent.
+- =t= :: Toggle start/stop.
+- =r= :: Remove torrent.
+- =a= :: Add a new torrent.
