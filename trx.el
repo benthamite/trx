@@ -904,10 +904,11 @@ NOW is a time, defaulting to `current-time'."
          (minutes (+ (* 60 hours)
                      (string-to-number (format-time-string "%M" time)))))
     (pcase (trx-levi-civita minutes beg end)
-      (1 (* 60 (if (> beg minutes) (- beg minutes) (+ beg minutes))))
-      (-1 (* 60 (if (> end minutes) (- end minutes) (+ end minutes))))
-      ;; FIXME this should probably just return 0 because of inaccuracy
-      (0 (* 60 (or (and (= minutes beg) end) (and (= minutes end) beg)))))))
+      (1 (* 60 (if (> beg minutes) (- beg minutes)
+                 (+ (- 1440 minutes) beg))))
+      (-1 (* 60 (if (> end minutes) (- end minutes)
+                   (+ (- 1440 minutes) end))))
+      (0 0))))
 
 (defun trx-tracker-url-p (str)
   "Return non-nil if STR is not just a number."
@@ -992,11 +993,11 @@ If the file named \"foo\" does not exist, try \"foo.part\" before returning."
          (base (or (and dir (cdr (assq 'name (tabulated-list-get-id))))
                    (user-error "No file at point")))
          (filename (and base (expand-file-name base dir))))
-    (or (file-exists-p filename)
-        (let ((part (concat filename ".part")))
-          (and (file-exists-p part) (setq filename part))))
-    (if filename (abbreviate-file-name filename)
-      (user-error "File does not exist"))))
+    (unless (or (file-exists-p filename)
+                (let ((part (concat filename ".part")))
+                  (and (file-exists-p part) (setq filename part))))
+      (user-error "File does not exist"))
+    (abbreviate-file-name filename)))
 
 (defun trx-files-index (torrent)
   "Return an array containing file data from TORRENT."
@@ -2268,7 +2269,7 @@ matches labels; prefix `!' negates."
                   'font-lock-face 'trx-torrent-size)
       (propertize (symbol-name (car (rassq .priority trx-priority-alist)))
                   'font-lock-face 'trx-file-priority)
-      (if (zerop .wanted) "no" "yes")
+      (if (memq .wanted '(nil 0 :json-false)) "no" "yes")
       (propertize (trx-size .length) 'font-lock-face 'trx-torrent-size)
       (propertize (if prefix (string-remove-prefix prefix .name) .name)
                   'font-lock-face 'trx-file-name 'trx-name t)))
@@ -2489,7 +2490,8 @@ is constructed from TEST, BODY and the `tabulated-list-id' tagged as `<>'."
 (define-trx-predicate percent-done>? > (cdr (assq 'percentDone <>)))
 (define-trx-predicate ratio>? > (cdr (assq 'uploadRatio <>)))
 (define-trx-predicate progress>? > (cdr (assq 'progress <>)))
-(define-trx-predicate file-want? > (cdr (assq 'wanted <>)))
+(define-trx-predicate file-want? >
+  (if (memq (cdr (assq 'wanted <>)) '(nil 0 :json-false)) 0 1))
 (define-trx-predicate added>? > (cdr (assq 'addedDate <>)))
 
 (define-trx-predicate eta>=? >=

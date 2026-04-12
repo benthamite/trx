@@ -125,7 +125,8 @@ ServerConfig.json, and `auth-source'."
 (defun trx-jackett--url (query)
   "Build the Jackett search URL for QUERY."
   (let ((scheme (if trx-jackett-use-tls "https" "http"))
-        (params (list (cons "apikey" (trx-jackett--api-key))
+        (params (list (cons "apikey" (url-hexify-string
+                                        (trx-jackett--api-key)))
                       (cons "Query" (url-hexify-string query)))))
     (when trx-jackett-categories
       (push (cons "Category[]"
@@ -164,9 +165,13 @@ ServerConfig.json, and `auth-source'."
 
 (defun trx-jackett--fetch (url query)
   "Fetch search results from URL for QUERY."
-  (let ((buf (generate-new-buffer " *trx-jackett*")))
+  (let* ((buf (generate-new-buffer " *trx-jackett*"))
+         (proc (condition-case nil
+                   (start-process "trx-jackett" buf "curl" "-s" "-f" url)
+                 (error (kill-buffer buf)
+                        (user-error "Cannot start curl")))))
     (set-process-sentinel
-     (start-process "trx-jackett" buf "curl" "-s" "-f" url)
+     proc
      (lambda (process _event)
        (let ((buf (process-buffer process)))
          (if (not (zerop (process-exit-status process)))
