@@ -1413,7 +1413,8 @@ When called with a prefix UNLINK, also unlink torrent data on disk."
      '(nil nil)))
   (when ids
     (let ((arguments `(:ids ,ids :delete-local-data ,(and unlink t))))
-      (trx-request-async nil "torrent-remove" arguments))))
+      (trx-request-async #'trx--revert-buffer-callback
+                         "torrent-remove" arguments))))
 
 (defun trx-delete (ids)
   "Prompt to delete (unlink) torrent at point or torrents marked or in region."
@@ -1423,7 +1424,14 @@ When called with a prefix UNLINK, also unlink torrent data on disk."
          (setq trx-marked-ids nil deactivate-mark t)
          ids)))
   (when ids
-    (trx-request-async nil "torrent-remove" `(:ids ,ids :delete-local-data t))))
+    (trx-request-async #'trx--revert-buffer-callback
+                       "torrent-remove" `(:ids ,ids :delete-local-data t))))
+
+(defun trx--revert-buffer-callback (&rest _)
+  "Revert the `*trx*' buffer after a mutating RPC call."
+  (let ((buf (get-buffer "*trx*")))
+    (when (and buf (buffer-live-p buf))
+      (with-current-buffer buf (revert-buffer)))))
 
 (defun trx-set-bandwidth-priority (ids priority)
   "Set bandwidth priority of torrent(s) at point, in region, or marked."
