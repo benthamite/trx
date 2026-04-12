@@ -65,7 +65,8 @@ proxy):
 (setq trx-service 443)  ; or your proxy port
 #+end_src
 
-Requires Emacs compiled with GnuTLS support.
+Requires Emacs compiled with GnuTLS support.  When TLS is not enabled,
+the connection type defaults to the standard network socket.
 
 ** Timeouts
 

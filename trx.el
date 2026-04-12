@@ -483,7 +483,7 @@ When `trx-use-tls' is non-nil, the connection uses TLS."
                        :host (when (null socket) trx-host)
                        :service (or socket trx-service)
                        :family (when socket 'local)
-                       :type (if (and trx-use-tls (null socket)) 'tls 'plain)
+                       :type (when (and trx-use-tls (null socket)) 'tls)
                        :noquery t :coding 'utf-8))
               (setq buffer nil process nil))
           (file-error
