@@ -729,12 +729,13 @@ The rate is calculated from BYTES according to `trx-units'."
 (defun trx-throttle-torrent (ids limit n)
   "Set transfer speed limit for IDS.
 LIMIT is a keyword; either :uploadLimit or :downloadLimit.
-N is the desired threshold.  A negative value of N means to disable the limit."
+N is the desired threshold.  A non-positive value of N means to
+disable the limit."
   (cl-assert (memq limit '(:uploadLimit :downloadLimit)))
   (let ((arguments `(:ids ,ids ,(pcase limit
                                   (:uploadLimit :uploadLimited)
                                   (:downloadLimit :downloadLimited))
-                     ,@(if (< n 0) '(:json-false) `(t ,limit ,n)))))
+                     ,@(if (<= n 0) '(:json-false) `(t ,limit ,n)))))
     (trx-request-async nil "torrent-set" arguments)))
 
 (defun trx-torrent-honors-speed-limits-p ()
@@ -1298,7 +1299,7 @@ When called with a prefix UNLINK, also unlink torrent data on disk."
 (defun trx-set-upload (limit)
   "Set global upload speed LIMIT in kB/s."
   (interactive (trx-prompt-speed-limit t))
-  (let ((arguments (if (< limit 0) '(:speed-limit-up-enabled :json-false)
+  (let ((arguments (if (<= limit 0) '(:speed-limit-up-enabled :json-false)
                      `(:speed-limit-up-enabled t :speed-limit-up ,limit))))
     (trx-request-async nil "session-set" arguments)))
 

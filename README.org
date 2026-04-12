@@ -286,7 +286,7 @@ The command ~trx-set-ratio~ sets the global seed ratio limit.  A negative value 
 #+findex: trx-set-torrent-upload
 #+findex: trx-set-torrent-ratio
 #+findex: trx-toggle-limits
-The command ~trx-set-torrent-download~ sets the download speed limit for selected torrents.  When a single torrent is selected, the prompt shows its current limit and whether it is enabled.  A negative value disables the per-torrent limit.
+The command ~trx-set-torrent-download~ sets the download speed limit for selected torrents.  When a single torrent is selected, the prompt shows its current limit and whether it is enabled.  A value of zero or less disables the per-torrent limit.
 
 The command ~trx-set-torrent-upload~ does the same for the upload speed limit.
 
