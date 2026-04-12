@@ -557,6 +557,25 @@ The function ~trx-request~ sends a synchronous RPC request to the Transmission d
 
 The function ~trx-request-async~ sends an asynchronous RPC request.  Its first argument is a callback function that receives the parsed JSON response.  This is the preferred method for interactive commands, as it does not block Emacs while waiting for the daemon's reply.
 
+* Testing
+:PROPERTIES:
+:CUSTOM_ID: h:testing
+:END:
+
+The file =trx-test.el= contains a comprehensive ERT test suite covering utility functions, formatting, data processing, HTTP/RPC response parsing, filtering, geoip caching, and constant validation.  Run the suite with:
+
+#+begin_example
+make test
+#+end_example
+
+Or directly:
+
+#+begin_example
+emacs --batch -l ert -l trx.el -l trx-test.el -f ert-run-tests-batch-and-exit
+#+end_example
+
+The tests do not require a running Transmission daemon.  They exercise all pure functions, verify HTTP status code handling with synthetic responses, and validate data structures.
+
 * Indices
 :PROPERTIES:
 :CUSTOM_ID: h:indices

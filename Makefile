@@ -31,4 +31,8 @@ install: $(SRC:=.gz)
 %.gz: %
 	gzip -k $<
 
-.PHONY: all clean dist install
+test:
+	$(EMACS) -batch $(EMACSFLAGS) -l ert -l trx.el -l trx-test.el \
+	  -f ert-run-tests-batch-and-exit
+
+.PHONY: all clean dist install test
