@@ -95,6 +95,15 @@
   :type '(choice (const :tag "Default" "/transmission/rpc")
                  (string :tag "Other path")))
 
+(defcustom trx-use-tls nil
+  "Whether to use TLS for the RPC connection.
+Requires Emacs to be compiled with GnuTLS support."
+  :type 'boolean)
+
+(defcustom trx-request-timeout 30
+  "Timeout in seconds for RPC requests."
+  :type 'number)
+
 (defcustom trx-rpc-auth nil
   "Authentication (username, password, etc.) for the RPC interface.
 Its value is a specification of the type used in `auth-source-search'.
@@ -306,6 +315,8 @@ caching built in or is otherwise slow."
 (defvar-local trx-torrent-id nil
   "The SHA-1 torrent info hash.")
 
+(define-error 'trx-timeout "Trx request timed out")
+
 (define-error 'trx-conflict
   "Wrong or missing header \"X-Transmission-Session-Id\"")
 
@@ -331,6 +342,19 @@ caching built in or is otherwise slow."
 
 (defvar trx-network-process-pool nil
   "List of network processes connected to Trx.")
+
+(defvar trx-session-cache nil
+  "Cached session data from the last `session-get' response.")
+
+(defvar trx--consecutive-failures 0
+  "Count of consecutive refresh failures.")
+
+(defvar-local trx-filter-active nil
+  "Active filter specification for the torrent list.
+When non-nil, a string that torrent names must match.")
+
+(defvar trx-filter-history nil
+  "History list for `trx-filter'.")
 
 
 ;; JSON RPC
@@ -409,11 +433,19 @@ and port default to `trx-host' and
 
 (defun trx-wait (process)
   "Wait to receive HTTP response from PROCESS.
-Return JSON object parsed from content."
+Return JSON object parsed from content.
+Signals `trx-timeout' if `trx-request-timeout' is exceeded or
+the connection dies."
   (with-current-buffer (process-buffer process)
-    (while (and (not (trx--content-finished-p))
-                (process-live-p process))
-      (accept-process-output process 1))
+    (let ((deadline (+ (float-time) trx-request-timeout)))
+      (while (and (not (trx--content-finished-p))
+                  (process-live-p process)
+                  (< (float-time) deadline))
+        (accept-process-output process 1))
+      (unless (process-live-p process)
+        (signal 'trx-timeout '("Connection closed by remote host")))
+      (unless (trx--content-finished-p)
+        (signal 'trx-timeout '("Request timed out"))))
     (trx--status)
     (trx--move-to-content)
     (when (search-forward "\"arguments\":" nil t)
@@ -432,22 +464,31 @@ Return JSON object parsed from content."
     (kill-buffer (process-buffer process))))
 
 (defun trx-make-network-process ()
-  "Return a network client process connected to a Trx daemon.
+  "Return a network client process connected to a Transmission daemon.
 When creating a new connection, the address is determined by the
-custom variables `trx-host' and `trx-service'."
+custom variables `trx-host' and `trx-service'.
+When `trx-use-tls' is non-nil, the connection uses TLS."
+  (when (and trx-use-tls (not (gnutls-available-p)))
+    (user-error "TLS requested but GnuTLS is not available"))
   (let ((socket (when (file-name-absolute-p trx-host)
                   (expand-file-name trx-host)))
         buffer process)
     (unwind-protect
-        (prog1
-            (setq buffer (generate-new-buffer " *trx*")
-                  process
-                  (make-network-process
-                   :name "trx" :buffer buffer
-                   :host (when (null socket) trx-host)
-                   :service (or socket trx-service)
-                   :family (when socket 'local) :noquery t :coding 'utf-8))
-          (setq buffer nil process nil))
+        (condition-case err
+            (prog1
+                (setq buffer (generate-new-buffer " *trx*")
+                      process
+                      (make-network-process
+                       :name "trx" :buffer buffer
+                       :host (when (null socket) trx-host)
+                       :service (or socket trx-service)
+                       :family (when socket 'local)
+                       :type (if (and trx-use-tls (null socket)) 'tls 'plain)
+                       :noquery t :coding 'utf-8))
+              (setq buffer nil process nil))
+          (file-error
+           (user-error "Cannot connect to Transmission at %s:%s -- %s"
+                       trx-host trx-service (error-message-string err))))
       (when (process-live-p process) (kill-process process))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
@@ -462,32 +503,61 @@ the pool."
         (push process trx-network-process-pool)
         process)))
 
-(defun trx-request (method &optional arguments tag)
-  "Send a request to Trx and return a JSON object.
-The JSON is the \"arguments\" object decoded Trx's response.
+(defun trx--flush-pool ()
+  "Kill all processes in `trx-network-process-pool' and reset it."
+  (dolist (process trx-network-process-pool)
+    (when (process-live-p process) (kill-process process))
+    (when (buffer-live-p (process-buffer process))
+      (kill-buffer (process-buffer process))))
+  (setq trx-network-process-pool nil))
 
+(defun trx-request (method &optional arguments tag)
+  "Send a request to Transmission and return a JSON object.
+The JSON is the \"arguments\" object decoded from the response.
 METHOD is a string.
 ARGUMENTS is a plist having keys corresponding to METHOD.
 TAG is an integer and ignored.
-
-Details regarding the Trx RPC can be found here:
+Retries once on transient failures.
+Details regarding the Transmission RPC can be found here:
 <https://github.com/transmission/transmission/blob/master/extras/rpc-spec.txt>"
-  (let ((process (trx-get-network-process))
-        (content (json-encode `(:method ,method :arguments ,arguments :tag ,tag))))
-    (set-process-plist process nil)
-    (set-process-filter process nil)
-    (set-process-sentinel process nil)
-    (unwind-protect
-        (condition-case err
-            (trx-send process content)
-          (trx-conflict
-           (trx-send process content))
-          (trx-failure
-           (message "%s" (cdr err))))
-      (if (process-live-p process) (stop-process process)
-        (setq trx-network-process-pool
-              (delq process trx-network-process-pool))
-        (kill-buffer (process-buffer process))))))
+  (let ((content (json-encode `(:method ,method :arguments ,arguments :tag ,tag)))
+        (retries 1)
+        result done)
+    (while (not done)
+      (let ((process (trx-get-network-process)))
+        (set-process-plist process nil)
+        (set-process-filter process nil)
+        (set-process-sentinel process nil)
+        (unwind-protect
+            (condition-case err
+                (progn
+                  (setq result (trx-send process content))
+                  (setq done t))
+              (trx-conflict
+               (setq result (trx-send process content))
+               (setq done t))
+              (trx-failure
+               (message "%s" (cdr err))
+               (setq done t))
+              (trx-timeout
+               (if (> retries 0)
+                   (progn (cl-decf retries) (trx--flush-pool))
+                 (message "Trx: %s" (cadr err))
+                 (setq done t)))
+              (file-error
+               (if (> retries 0)
+                   (progn (cl-decf retries) (trx--flush-pool))
+                 (message "Trx: connection failed -- %s"
+                          (error-message-string err))
+                 (setq done t))))
+          (when (and process (process-live-p process))
+            (stop-process process))
+          (when (and process (not (process-live-p process)))
+            (setq trx-network-process-pool
+                  (delq process trx-network-process-pool))
+            (when (buffer-live-p (process-buffer process))
+              (kill-buffer (process-buffer process)))))))
+    result))
 
 
 ;; Asynchronous calls
@@ -552,12 +622,21 @@ METHOD, ARGUMENTS, and TAG are the same as in `trx-request'."
 ;; Timer management
 
 (defun trx-timer-revert ()
-  "Revert the buffer or cancel `trx-timer'."
+  "Revert the buffer or cancel `trx-timer'.
+After 5 consecutive failures, cancel the timer."
   (if (and (memq major-mode trx-refresh-modes)
            (not (or (bound-and-true-p isearch-mode)
                     (buffer-narrowed-p)
                     (use-region-p))))
-      (revert-buffer)
+      (condition-case _err
+          (progn
+            (revert-buffer)
+            (setq trx--consecutive-failures 0))
+        (error
+         (cl-incf trx--consecutive-failures)
+         (when (>= trx--consecutive-failures 5)
+           (cancel-timer trx-timer)
+           (message "Trx: too many failures, auto-refresh disabled"))))
     (cancel-timer trx-timer)))
 
 (defun trx-timer-run ()
@@ -662,29 +741,44 @@ N is the desired threshold.  A negative value of N means to disable the limit."
   "Return non-nil if torrent honors session speed limits, otherwise nil."
   (eq t (cdr (assq 'honorsSessionLimits (elt trx-torrent-vector 0)))))
 
+(defun trx-refresh-session-cache ()
+  "Update `trx-session-cache' from the Transmission daemon."
+  (trx-request-async
+   (lambda (response) (setq trx-session-cache response))
+   "session-get"
+   '(:fields ["speed-limit-up" "speed-limit-down"
+              "speed-limit-up-enabled" "speed-limit-down-enabled"
+              "seedRatioLimit" "seedRatioLimited"
+              "alt-speed-up" "alt-speed-down"
+              "alt-speed-time-day" "alt-speed-time-enabled"
+              "alt-speed-time-begin" "alt-speed-time-end"])))
+
 (defun trx-prompt-speed-limit (upload)
   "Make a prompt to set transfer speed limit.
 If UPLOAD is non-nil, make a prompt for upload rate, otherwise
 for download rate."
-  (let ((args '(:fields ["speed-limit-up" "speed-limit-down"
-                         "speed-limit-up-enabled" "speed-limit-down-enabled"])))
-    (let-alist (trx-request "session-get" args)
-      (let ((limit (if upload .speed-limit-up .speed-limit-down))
-            (enabled (eq t (if upload .speed-limit-up-enabled
-                             .speed-limit-down-enabled))))
-        (list (read-number (concat "Set global " (if upload "up" "down") "load limit ("
-                                   (if enabled (format "%d kB/s" limit) "disabled")
-                                   "): ")))))))
+  (let-alist (or trx-session-cache
+                 (trx-request "session-get"
+                              '(:fields ["speed-limit-up" "speed-limit-down"
+                                         "speed-limit-up-enabled"
+                                         "speed-limit-down-enabled"])))
+    (let ((limit (if upload .speed-limit-up .speed-limit-down))
+          (enabled (eq t (if upload .speed-limit-up-enabled
+                           .speed-limit-down-enabled))))
+      (list (read-number (concat "Set global " (if upload "up" "down") "load limit ("
+                                 (if enabled (format "%d kB/s" limit) "disabled")
+                                 "): "))))))
 
 (defun trx-prompt-ratio-limit ()
   "Make a prompt to set global seed ratio limit."
-  (let ((arguments '(:fields ["seedRatioLimit" "seedRatioLimited"])))
-    (let-alist (trx-request "session-get" arguments)
-      (let ((limit .seedRatioLimit)
-            (enabled (eq t .seedRatioLimited)))
-        (list (read-number (concat "Set global seed ratio limit ("
-                                   (if enabled (format "%.1f" limit) "disabled")
-                                   "): ")))))))
+  (let-alist (or trx-session-cache
+                 (trx-request "session-get"
+                              '(:fields ["seedRatioLimit" "seedRatioLimited"])))
+    (let ((limit .seedRatioLimit)
+          (enabled (eq t .seedRatioLimited)))
+      (list (read-number (concat "Set global seed ratio limit ("
+                                 (if enabled (format "%.1f" limit) "disabled")
+                                 "): "))))))
 
 (defun trx-read-strings (prompt &optional collection history filter)
   "Read strings until an input is blank, with optional completion.
@@ -1415,7 +1509,9 @@ See `trx-read-time' for details on time input."
 (defun trx-turtle-set-speeds (up down)
   "Set UP and DOWN speed limits (kB/s) for turtle mode."
   (interactive
-   (let-alist (trx-request "session-get" '(:fields ["alt-speed-up" "alt-speed-down"]))
+   (let-alist (or trx-session-cache
+                  (trx-request "session-get"
+                               '(:fields ["alt-speed-up" "alt-speed-down"])))
      (let ((p1 (format "Set turtle upload limit (%d kB/s): " .alt-speed-up))
            (p2 (format "Set turtle download limit (%d kB/s): " .alt-speed-down)))
        (list (read-number p1) (read-number p2)))))
@@ -1490,6 +1586,30 @@ See `trx-read-time' for details on time input."
     (if (one-window-p)
         (bury-buffer)
       (delete-window))))
+
+(defun trx-rename-path (path new-name)
+  "Rename the torrent file at point.
+PATH is the current file path, NEW-NAME is the desired new name."
+  (interactive
+   (let* ((entry (tabulated-list-get-id))
+          (file-name (or (cdr (assq 'name entry))
+                         (user-error "No file at point")))
+          (new (read-string (format "Rename '%s' to: "
+                                    (file-name-nondirectory file-name))
+                            (file-name-nondirectory file-name))))
+     (list file-name new)))
+  (let ((id trx-torrent-id))
+    (trx-request-async
+     (lambda (_response)
+       (message "Renamed '%s' to '%s'" (file-name-nondirectory path) new-name)
+       (dolist (buf (buffer-list))
+         (when (and (buffer-live-p buf)
+                    (string-match-p "\\`\\*trx-files:" (buffer-name buf)))
+           (with-current-buffer buf
+             (when (equal trx-torrent-id id)
+               (revert-buffer))))))
+     "torrent-rename-path"
+     (list :ids (vector id) :path path :name new-name))))
 
 (defun trx-files-unwant ()
   "Mark file(s)--at point, in region, or marked--as unwanted."
@@ -1877,10 +1997,57 @@ Each form in BODY is a column descriptor."
              ,seq)
        (setq tabulated-list-entries (nreverse ,res)))))
 
+(defun trx-filter-apply (torrents filter)
+  "Return TORRENTS matching FILTER.
+FILTER is a string.  Prefix `status:' matches status, `label:'
+matches labels, `!' negates.  Plain text matches torrent name
+case-insensitively."
+  (let* ((negate (string-prefix-p "!" filter))
+         (filter (if negate (substring filter 1) filter))
+         (predicate
+          (cond
+           ((string-prefix-p "status:" filter)
+            (let ((status (substring filter 7)))
+              (lambda (torrent)
+                (string-match-p status (aref trx-status-names
+                                             (cdr (assq 'status torrent)))))))
+           ((string-prefix-p "label:" filter)
+            (let ((label (substring filter 6)))
+              (lambda (torrent)
+                (cl-some (lambda (l) (string-match-p label l))
+                         (cdr (assq 'labels torrent))))))
+           (t
+            (let ((pattern (regexp-quote filter)))
+              (lambda (torrent)
+                (string-match-p pattern (cdr (assq 'name torrent)))))))))
+    (cl-remove-if (if negate predicate (lambda (x) (not (funcall predicate x))))
+                  torrents)))
+
+(defun trx-filter (filter)
+  "Filter the torrent list by FILTER.
+Plain text matches name; `status:X' matches status; `label:X'
+matches labels; prefix `!' negates."
+  (interactive
+   (list (read-string (if trx-filter-active
+                          (format "Filter [current: %s]: " trx-filter-active)
+                        "Filter: ")
+                      nil 'trx-filter-history)))
+  (setq trx-filter-active (unless (string-empty-p filter) filter))
+  (revert-buffer))
+
+(defun trx-filter-clear ()
+  "Clear the active torrent list filter."
+  (interactive)
+  (setq trx-filter-active nil)
+  (revert-buffer))
+
 (defun trx-draw-torrents (_id)
   (let* ((arguments `(:fields ,trx-draw-torrents-keys))
          (response (trx-request "torrent-get" arguments)))
     (setq trx-torrent-vector (trx-torrents response)))
+  (when trx-filter-active
+    (setq trx-torrent-vector
+          (trx-filter-apply trx-torrent-vector trx-filter-active)))
   (trx-do-entries trx-torrent-vector
     (trx-eta .eta .percentDone)
     (trx-size .sizeWhenDone)
@@ -2000,29 +2167,41 @@ object `trx-timer' is run."
 (define-trx-refresher peers)
 
 (defmacro trx-context (mode)
-  "Switch to a context buffer of major mode MODE."
+  "Switch to a context buffer of major mode MODE.
+Uses per-torrent buffer names so multiple torrents can be viewed
+simultaneously."
   (declare (debug (symbolp)))
   (cl-assert (string-suffix-p "-mode" (symbol-name mode)))
-  (let ((name (make-symbol "name")))
-    `(let ((id (or trx-torrent-id
-                   (cdr (assq 'hashString (tabulated-list-get-id)))))
-           (,name ,(format "*%s*" (string-remove-suffix "-mode" (symbol-name mode)))))
+  (let ((base (string-remove-suffix "-mode" (symbol-name mode))))
+    `(let* ((id (or trx-torrent-id
+                    (cdr (assq 'hashString (tabulated-list-get-id)))))
+            (torrent-name (cdr (assq 'name (tabulated-list-get-id))))
+            (buf-name (format "*%s: %s*"
+                              ,base
+                              (or torrent-name (substring id 0 12)))))
        (if (not id) (user-error "No torrent selected")
-         (let ((buffer (or (get-buffer ,name)
-                           (generate-new-buffer ,name))))
+         (let ((buffer (or (get-buffer buf-name)
+                           (generate-new-buffer buf-name))))
            (trx-turtle-poll)
            (with-current-buffer buffer
-             (let ((old-id (or trx-torrent-id
-                               (cdr (assq 'hashString (tabulated-list-get-id))))))
-               (unless (eq major-mode ',mode)
-                 (funcall #',mode))
-               (if (and old-id (eq old-id id))
-                   (revert-buffer)
-                 (setq trx-torrent-id id)
-                 (setq trx-marked-ids nil)
-                 (revert-buffer)
-                 (goto-char (point-min)))))
+             (unless (eq major-mode ',mode)
+               (funcall #',mode))
+             (unless (equal trx-torrent-id id)
+               (setq trx-torrent-id id)
+               (setq trx-marked-ids nil))
+             (revert-buffer)
+             (goto-char (point-min)))
            (pop-to-buffer-same-window buffer))))))
+
+(defun trx-kill-torrent-buffers ()
+  "Kill all per-torrent detail buffers."
+  (interactive)
+  (let ((n 0))
+    (dolist (buf (buffer-list))
+      (when (string-match-p "\\`\\*trx-\\(files\\|info\\|peers\\): " (buffer-name buf))
+        (kill-buffer buf)
+        (cl-incf n)))
+    (message "Killed %d torrent buffer%s" n (if (= n 1) "" "s"))))
 
 (defun trx-print-torrent (id cols)
   "Insert a torrent entry at point using `tabulated-list-print-entry'.
@@ -2202,6 +2381,7 @@ for explanation of the peer flags."
     (define-key map "X" 'trx-files-command)
     (define-key map "W" 'trx-browse-url-of-file)
     (define-key map "C" 'trx-copy-file)
+    (define-key map "R" 'trx-rename-path)
     (define-key map "d" 'trx-dired-file)
     (define-key map "e" 'trx-peers)
     (define-key map "i" 'trx-info)
@@ -2228,6 +2408,7 @@ for explanation of the peer flags."
     ["Open File In WWW Browser" trx-browse-url-of-file]
     ["Show File In DirEd" trx-dired-file]
     ["Copy File Name" trx-copy-filename-as-kill]
+    ["Rename File" trx-rename-path]
     "--"
     ["Unwant Files" trx-files-unwant
      :help "Tell Trx not to download files at point or in region"]
@@ -2300,6 +2481,8 @@ for explanation of the peer flags."
     (define-key map "q" 'trx-quit)
     (define-key map "y" 'trx-set-bandwidth-priority)
     (define-key map "U" 'trx-unmark-all)
+    (define-key map "/" 'trx-filter)
+    (define-key map "\\" 'trx-filter-clear)
     map)
   "Keymap used in `trx-mode' buffers.")
 
@@ -2348,6 +2531,9 @@ for explanation of the peer flags."
      ["Set Active Time Span" trx-turtle-set-times]
      ["Set Turtle Speed Limits" trx-turtle-set-speeds])
     "--"
+    ["Filter Torrents" trx-filter]
+    ["Clear Filter" trx-filter-clear]
+    "--"
     ["View Torrent Files" trx-files]
     ["View Torrent Info" trx-info]
     ["View Torrent Peers" trx-peers]
@@ -2358,9 +2544,10 @@ for explanation of the peer flags."
 (define-derived-mode trx-mode tabulated-list-mode "Trx"
   "Major mode for the list of torrents in a Transmission session.
 See https://github.com/transmission/transmission for more information about
-Trx."
+Transmission."
   :group 'trx
   (setq-local line-move-visual nil)
+  (setq-local trx-filter-active nil)
   (setq tabulated-list-format
         [("ETA" 4 trx-eta>=? :right-align t)
          ("Size" 9 trx-size-when-done>?
@@ -2387,6 +2574,7 @@ Trx."
          (buffer (or (get-buffer name)
                      (generate-new-buffer name))))
     (trx-turtle-poll)
+    (trx-refresh-session-cache)
     (unless (eq buffer (current-buffer))
       (with-current-buffer buffer
         (unless (eq major-mode 'trx-mode)

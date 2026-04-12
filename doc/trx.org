@@ -10,6 +10,8 @@ Entry points are =M-x trx= (torrent list) and =M-x trx-add= (add a torrent).
 
 * Usage
 
+** Torrent list
+
 - =M-x trx= :: Open the torrent list.
 - =M-x trx-add= :: Add a torrent by URL, magnet link, info hash, or file path.
 
@@ -18,6 +20,80 @@ From the torrent list:
 - =i= :: Open torrent info.
 - =e= :: Open peer list.
 - =m= :: Mark torrent.
-- =t= :: Toggle start/stop.
+- =s= :: Toggle start/stop.
 - =r= :: Remove torrent.
 - =a= :: Add a new torrent.
+- =/= :: Filter torrents.
+- =\= :: Clear filter.
+
+** File list
+
+From the file list:
+- =RET= :: Visit file.
+- =R= :: Rename file at point.
+- =C= :: Copy file.
+- =u= :: Mark as unwanted.
+- =w= :: Mark as wanted.
+- =y= :: Set bandwidth priority.
+
+** Filtering
+
+Press =/= in the torrent list to filter.  Filter syntax:
+- Plain text matches torrent name (case-insensitive).
+- =status:seeding= matches torrent status.
+- =label:movies= matches torrent labels.
+- =!foo= negates the match (exclude torrents matching "foo").
+
+Press =\= to clear the filter.
+
+** Per-torrent buffers
+
+Detail views (files, info, peers) use per-torrent buffer names like
+=*trx-files: Torrent Name*=.  This allows viewing details for multiple
+torrents simultaneously.  Use =M-x trx-kill-torrent-buffers= to clean up
+all detail buffers.
+
+* Configuration
+
+** TLS/HTTPS
+
+To connect to a Transmission daemon over TLS (e.g. behind an HTTPS reverse
+proxy):
+
+#+begin_src emacs-lisp
+(setq trx-use-tls t)
+(setq trx-service 443)  ; or your proxy port
+#+end_src
+
+Requires Emacs compiled with GnuTLS support.
+
+** Timeouts
+
+The default RPC request timeout is 30 seconds:
+
+#+begin_src emacs-lisp
+(setq trx-request-timeout 60)  ; increase for slow connections
+#+end_src
+
+After 5 consecutive refresh failures, auto-refresh disables itself to
+avoid flooding the echo area with errors.
+
+** Auto-refresh
+
+Add modes to =trx-refresh-modes= to enable periodic buffer refresh:
+
+#+begin_src emacs-lisp
+(setq trx-refresh-modes '(trx-mode trx-files-mode))
+(setq trx-refresh-interval 2)  ; seconds
+#+end_src
+
+* Improvements over transmission.el
+
+=trx= extends the upstream =transmission.el= with:
+
+1. *TLS/HTTPS support* via =trx-use-tls=.
+2. *Robust error handling* with timeouts, retries, and graceful degradation.
+3. *Session cache* so interactive prompts avoid blocking RPC calls.
+4. *Torrent list filtering* by name, status, or label.
+5. *Per-torrent buffers* for simultaneous detail views.
+6. *File renaming* via =torrent-rename-path= RPC method.
