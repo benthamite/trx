@@ -492,6 +492,8 @@ The command ~trx-turtle-set-times~ sets the begin and end times for the turtle m
 #+findex: trx-free
 The command ~trx-stats~ displays a summary of the Transmission session in the echo area: current download and upload rates, active and total torrent counts, total data received and sent, and session uptime.
 
+The torrent list mode line also shows a live summary: active/total torrent count and aggregate download/upload speeds (e.g. =Trx 3/10 ↓42 ↑5=).  This updates automatically when the buffer refreshes.
+
 The command ~trx-free~ prompts for a directory and displays how much free space is available there, as reported by the Transmission daemon.
 
 ** Quitting

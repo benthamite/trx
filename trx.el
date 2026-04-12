@@ -2065,7 +2065,21 @@ matches labels; prefix `!' negates."
      (mapconcat (lambda (l)
                   (concat " " (propertize l 'font-lock-face 'font-lock-constant-face)))
                 .labels "")))
-  (tabulated-list-print))
+  (tabulated-list-print)
+  (trx--update-mode-line))
+
+(defun trx--update-mode-line ()
+  "Update `mode-name' with torrent count and total speeds."
+  (when (and trx-torrent-vector (eq major-mode 'trx-mode))
+    (let ((down 0) (up 0) (active 0) (total (length trx-torrent-vector)))
+      (cl-loop for torrent across trx-torrent-vector do
+               (let-alist torrent
+                 (cl-incf down .rateDownload)
+                 (cl-incf up .rateUpload)
+                 (unless (zerop .status) (cl-incf active))))
+      (setq mode-name
+            (format "Trx %d/%d \u2193%d \u2191%d"
+                    active total (trx-rate down) (trx-rate up))))))
 
 (defun trx-draw-files (id)
   (let* ((arguments `(:ids ,id :fields ,trx-draw-files-keys))
