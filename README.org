@@ -578,6 +578,62 @@ The function ~trx-request~ sends a synchronous RPC request to the Transmission d
 
 The function ~trx-request-async~ sends an asynchronous RPC request.  Its first argument is a callback function that receives the parsed JSON response.  This is the preferred method for interactive commands, as it does not block Emacs while waiting for the daemon's reply.
 
+* Jackett search integration
+:PROPERTIES:
+:CUSTOM_ID: h:jackett
+:END:
+
+The optional library =trx-jackett.el= integrates with [[https://github.com/Jackett/Jackett][Jackett]], a proxy server that provides a unified search API across many torrent indexers.  It requires a running Jackett instance.
+
+** Configuration
+:PROPERTIES:
+:CUSTOM_ID: h:jackett-configuration
+:END:
+
+#+vindex: trx-jackett-host
+#+vindex: trx-jackett-port
+#+vindex: trx-jackett-api-key
+#+vindex: trx-jackett-use-tls
+#+vindex: trx-jackett-categories
+The user option ~trx-jackett-host~ and ~trx-jackett-port~ specify the Jackett server address (default: ~localhost:9117~).
+
+The user option ~trx-jackett-api-key~ is the API key for authentication.  If nil, it is resolved automatically in this order:
+
+1. Jackett's own =ServerConfig.json= (checked in =~/Library/Application Support/Jackett/=, =~/.config/Jackett/=, and =/var/lib/jackett/=).
+2. ~auth-source-search~ using the host and port (e.g. from =~/.authinfo.gpg=).
+
+In most cases no configuration is needed---the key is read directly from Jackett's config file.
+
+The user option ~trx-jackett-categories~ is a list of Torznab category IDs to filter results.  Common categories: 2000 (Movies), 3000 (Audio), 5000 (TV), 7000 (Books).  When nil, all categories are searched.
+
+The user option ~trx-jackett-use-tls~, when non-nil, uses HTTPS.
+
+** Searching
+:PROPERTIES:
+:CUSTOM_ID: h:jackett-searching
+:END:
+
+#+findex: trx-jackett-search
+The command ~trx-jackett-search~ prompts for a query, searches all configured Jackett indexers, and displays results in a ~trx-jackett-results-mode~ buffer sorted by seeders.  Columns show seeders, leechers, size, age, tracker name, category, and title.
+
+** Working with results
+:PROPERTIES:
+:CUSTOM_ID: h:jackett-results
+:END:
+
+#+findex: trx-jackett-add
+#+findex: trx-jackett-browse-details
+#+findex: trx-jackett-copy-magnet
+#+findex: trx-jackett-search-again
+In the results buffer:
+
+- ~RET~ (~trx-jackett-add~) adds the torrent at point to Transmission via its magnet link or download URL.
+- ~b~ (~trx-jackett-browse-details~) opens the torrent's details page in a web browser.
+- ~c~ (~trx-jackett-copy-magnet~) copies the magnet link to the kill ring.
+- ~s~ (~trx-jackett-search-again~) runs a new search.
+
+Columns are sortable by clicking the header or pressing ~S~.
+
 * Testing
 :PROPERTIES:
 :CUSTOM_ID: h:testing

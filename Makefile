@@ -32,7 +32,7 @@ install: $(SRC:=.gz)
 	gzip -k $<
 
 test:
-	$(EMACS) -batch $(EMACSFLAGS) -l ert -l trx.el -l trx-test.el \
-	  -f ert-run-tests-batch-and-exit
+	$(EMACS) -batch $(EMACSFLAGS) -l ert -l trx.el -l trx-jackett.el \
+	  -l trx-test.el -f ert-run-tests-batch-and-exit
 
 .PHONY: all clean dist install test

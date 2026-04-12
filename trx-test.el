@@ -1002,6 +1002,69 @@
   "Large values do not overflow."
   (should (= 50.0 (trx-percent 5000000000 10000000000))))
 
+
+;;;; Jackett integration
+
+(require 'trx-jackett)
+
+(ert-deftest trx-jackett--format-size-nil ()
+  "Nil bytes returns ?."
+  (should (equal "?" (trx-jackett--format-size nil))))
+
+(ert-deftest trx-jackett--format-size-zero ()
+  "Zero bytes returns ?."
+  (should (equal "?" (trx-jackett--format-size 0))))
+
+(ert-deftest trx-jackett--format-size-normal ()
+  "Normal size returns human-readable string."
+  (let ((result (trx-jackett--format-size 1073741824)))
+    (should (stringp result))
+    (should (string-match-p "G" result))))
+
+(ert-deftest trx-jackett--format-age-nil ()
+  "Nil date returns ?."
+  (should (equal "?" (trx-jackett--format-age nil))))
+
+(ert-deftest trx-jackett--format-age-empty ()
+  "Empty string returns ?."
+  (should (equal "?" (trx-jackett--format-age ""))))
+
+(ert-deftest trx-jackett--url-basic ()
+  "URL is well-formed with required parameters."
+  (let ((trx-jackett-host "localhost")
+        (trx-jackett-port 9117)
+        (trx-jackett-api-key "testkey123")
+        (trx-jackett-use-tls nil)
+        (trx-jackett-categories nil))
+    (let ((url (trx-jackett--url "ubuntu")))
+      (should (string-prefix-p "http://localhost:9117/" url))
+      (should (string-match-p "apikey" url))
+      (should (string-match-p "ubuntu" url)))))
+
+(ert-deftest trx-jackett--url-tls ()
+  "TLS uses https scheme."
+  (let ((trx-jackett-host "localhost")
+        (trx-jackett-port 9117)
+        (trx-jackett-api-key "testkey123")
+        (trx-jackett-use-tls t)
+        (trx-jackett-categories nil))
+    (should (string-prefix-p "https://"
+                             (trx-jackett--url "test")))))
+
+(ert-deftest trx-jackett--api-key-direct ()
+  "Direct API key is returned."
+  (let ((trx-jackett-api-key "mykey"))
+    (should (equal "mykey" (trx-jackett--api-key)))))
+
+(ert-deftest trx-jackett--api-key-missing ()
+  "Missing API key signals error when no source is available."
+  (cl-letf (((symbol-function 'trx-jackett--api-key-from-config)
+             (lambda () nil)))
+    (let ((trx-jackett-api-key nil)
+          (trx-jackett-host "nonexistent.test")
+          (trx-jackett-port 9117))
+      (should-error (trx-jackett--api-key) :type 'user-error))))
+
 (provide 'trx-test)
 
 ;;; trx-test.el ends here
