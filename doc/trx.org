@@ -4,4 +4,4 @@
 
 The comprehensive manual for =trx.el= is in [[file:../README.org][README.org]] at the repository root.
 
-A comprehensive ERT test suite is available in =trx-test.el=.  Run it with =make test=.
+The ERT test suite (159 tests) is in =trx-test.el=.  Run it with =make test=.

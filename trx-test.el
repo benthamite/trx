@@ -936,6 +936,66 @@
     (should (= 1 call-count))))
 
 
+;;;; URI detection (TRAMP guard)
+
+(ert-deftest trx--uri-like-p-magnet ()
+  "Magnet link is URI-like."
+  (should (trx--uri-like-p "magnet:?xt=urn:btih:abc")))
+
+(ert-deftest trx--uri-like-p-http ()
+  "HTTP URL is URI-like."
+  (should (trx--uri-like-p "http://example.com/foo.torrent")))
+
+(ert-deftest trx--uri-like-p-https ()
+  "HTTPS URL is URI-like."
+  (should (trx--uri-like-p "https://example.com/foo.torrent")))
+
+(ert-deftest trx--uri-like-p-udp ()
+  "UDP tracker URL is URI-like."
+  (should (trx--uri-like-p "udp://tracker.example.com:6969")))
+
+(ert-deftest trx--uri-like-p-file ()
+  "Local file path is not URI-like."
+  (should-not (trx--uri-like-p "/tmp/foo.torrent")))
+
+(ert-deftest trx--uri-like-p-hash ()
+  "Bare info hash is not URI-like."
+  (should-not
+   (trx--uri-like-p "0123456789abcdef0123456789abcdef01234567")))
+
+(ert-deftest trx--uri-like-p-nil ()
+  "Nil is not URI-like."
+  (should-not (trx--uri-like-p nil)))
+
+
+;;;; Default directory helper
+
+(ert-deftest trx--set-default-directory-sets-dir ()
+  "Sets `default-directory' from torrent data."
+  (let ((trx-torrent-vector
+         (vector `((downloadDir . ,temporary-file-directory))))
+        (default-directory "/"))
+    (trx--set-default-directory)
+    (should (equal (file-name-as-directory temporary-file-directory)
+                   default-directory))))
+
+(ert-deftest trx--set-default-directory-nonexistent ()
+  "Does not set `default-directory' for nonexistent directory."
+  (let ((trx-torrent-vector
+         (vector '((downloadDir . "/nonexistent/path/42/"))))
+        (default-directory "/"))
+    (trx--set-default-directory)
+    (should (equal "/" default-directory))))
+
+
+;;;; Mode line summary
+
+(ert-deftest trx--update-mode-line-no-crash ()
+  "Does not error when `trx-torrent-vector' is nil."
+  (let ((trx-torrent-vector nil))
+    (should-not (trx--update-mode-line))))
+
+
 ;;;; Large value edge cases
 
 (ert-deftest trx-percent-large-values ()
