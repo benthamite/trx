@@ -281,7 +281,7 @@ caching built in or is otherwise slow."
   ["hashString" "name" "status" "eta" "error" "labels"
    "rateDownload" "rateUpload"
    "percentDone" "sizeWhenDone" "metadataPercentComplete"
-   "uploadRatio"])
+   "uploadRatio" "addedDate"])
 
 (defconst trx-draw-files-keys
   ["name" "files" "downloadDir" "wanted" "priorities"])
@@ -2059,6 +2059,7 @@ matches labels; prefix `!' negates."
     (format "%.1f" (if (> .uploadRatio 0) .uploadRatio 0))
     (if (not (zerop .error)) (propertize "error" 'font-lock-face 'error)
       (trx-format-status .status .rateUpload .rateDownload))
+    (trx-when .addedDate)
     (concat
      (propertize .name 'trx-name t)
      (mapconcat (lambda (l)
@@ -2258,6 +2259,7 @@ is constructed from TEST, BODY and the `tabulated-list-id' tagged as `<>'."
 (define-trx-predicate ratio>? > (cdr (assq 'uploadRatio <>)))
 (define-trx-predicate progress>? > (cdr (assq 'progress <>)))
 (define-trx-predicate file-want? > (cdr (assq 'wanted <>)))
+(define-trx-predicate added>? > (cdr (assq 'addedDate <>)))
 
 (define-trx-predicate eta>=? >=
   (let-alist <>
@@ -2566,6 +2568,7 @@ Transmission."
          ("Up" 3 nil :right-align t)
          ("Ratio" 5 trx-ratio>? :right-align t)
          ("Status" 11 t)
+         ("Added" 6 trx-added>? :right-align t)
          ("Name" 0 t)])
   (setq tabulated-list-padding 1)
   (trx-tabulated-list-format)

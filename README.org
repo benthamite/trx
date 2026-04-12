@@ -23,7 +23,7 @@ The package is a renamed and improved fork of Mark Oteiza's =transmission.el=.  
 
 The interface is organized around four contexts, each with its own major mode:
 
-- *Torrent list* (~trx-mode~): the main entry point.  Shows all torrents with their status, progress, speeds, and ratio.  From here you can add, start, stop, remove, verify, and label torrents, set speed and ratio limits, and navigate to per-torrent detail views.
+- *Torrent list* (~trx-mode~): the main entry point.  Shows all torrents with their status, progress, speeds, ratio, and addition date.  From here you can add, start, stop, remove, verify, and label torrents, set speed and ratio limits, and navigate to per-torrent detail views.
 - *File list* (~trx-files-mode~): shows the files within a single torrent.  You can toggle files for download, set per-file priorities, visit files on disk, copy them, rename them, or open them with external applications.
 - *Torrent info* (~trx-info-mode~): a read-only buffer displaying detailed metadata for a single torrent---dates, tracker statistics, peer origins, piece data, speed limits, and more.
 - *Peer list* (~trx-peers-mode~): shows connected peers with their addresses, flags, progress, transfer rates, client names, and optionally geolocated country names.
