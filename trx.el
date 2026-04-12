@@ -79,6 +79,56 @@
   :link '(url-link "https://transmissionbt.com/")
   :group 'external)
 
+(defface trx-torrent-name
+  '((t :inherit font-lock-keyword-face))
+  "Face for torrent names in the torrent list."
+  :group 'trx)
+
+(defface trx-torrent-size
+  '((t :inherit shadow))
+  "Face for size, ETA, ratio, and age columns."
+  :group 'trx)
+
+(defface trx-torrent-download
+  '((t :inherit success))
+  "Face for download rate column."
+  :group 'trx)
+
+(defface trx-torrent-upload
+  '((t :inherit font-lock-constant-face))
+  "Face for upload rate column."
+  :group 'trx)
+
+(defface trx-torrent-label
+  '((t :inherit font-lock-type-face))
+  "Face for torrent labels."
+  :group 'trx)
+
+(defface trx-file-name
+  '((t :inherit font-lock-keyword-face))
+  "Face for file names in the file list."
+  :group 'trx)
+
+(defface trx-file-priority
+  '((t :inherit font-lock-function-name-face))
+  "Face for file priority in the file list."
+  :group 'trx)
+
+(defface trx-peer-address
+  '((t :inherit shadow))
+  "Face for peer addresses."
+  :group 'trx)
+
+(defface trx-peer-client
+  '((t :inherit font-lock-type-face))
+  "Face for peer client names."
+  :group 'trx)
+
+(defface trx-peer-location
+  '((t :inherit font-lock-function-name-face))
+  "Face for peer locations."
+  :group 'trx)
+
 (defcustom trx-host "localhost"
   "Host name, IP address, or socket address of the Transmission session."
   :type 'string)
@@ -1047,6 +1097,80 @@ Uses color names for the 256 color palette."
   (if (< n 10000) (number-to-string n)
     (let ((calc-group-char trx-digit-delimiter))
       (math-group-float (number-to-string n)))))
+
+(defvar-local trx--fade-overlays nil
+  "Overlays for the truncation fade effect.")
+
+(defun trx--truncate (string max-width &optional face)
+  "Truncate STRING to MAX-WIDTH with optional FACE.
+Mark the last three characters of truncated text with the
+`trx-fade' property for post-rendering color blending.
+FACE is applied as both `face' and `font-lock-face'."
+  (let* ((truncated (> (string-width string) max-width))
+         (result (if truncated
+                     (truncate-string-to-width string max-width)
+                   string)))
+    (when face
+      (setq result (propertize result 'face face 'font-lock-face face))
+      (when truncated
+        (let ((len (length result)))
+          (when (>= len 3)
+            (dotimes (i 3)
+              (put-text-property (+ (- len 3) i) (+ (- len 3) i 1)
+                                'trx-fade (1+ i) result))))))
+    result))
+
+(defun trx--blend-color (fg bg ratio)
+  "Blend FG toward BG by RATIO (0.0 = pure FG, 1.0 = pure BG)."
+  (let ((fv (color-values fg))
+        (bv (color-values bg)))
+    (when (and fv bv)
+      (format "#%02x%02x%02x"
+              (ash (round (+ (* (- 1.0 ratio) (nth 0 fv))
+                             (* ratio (nth 0 bv)))) -8)
+              (ash (round (+ (* (- 1.0 ratio) (nth 1 fv))
+                             (* ratio (nth 1 bv)))) -8)
+              (ash (round (+ (* (- 1.0 ratio) (nth 2 fv))
+                             (* ratio (nth 2 bv)))) -8)))))
+
+(defun trx--resolve-foreground (face-val)
+  "Resolve the effective foreground color from FACE-VAL."
+  (cond
+   ((symbolp face-val)
+    (face-foreground face-val nil t))
+   ((consp face-val)
+    (cl-some (lambda (f)
+               (and (facep f) (face-foreground f nil t)))
+             face-val))))
+
+(defun trx--apply-fades ()
+  "Create fade overlays for characters marked with `trx-fade'."
+  (mapc #'delete-overlay trx--fade-overlays)
+  (setq trx--fade-overlays nil)
+  (let ((bg (face-background 'default nil t)))
+    (when bg
+      (save-excursion
+        (goto-char (point-min))
+        (let ((pos (point-min)))
+          (while (< pos (point-max))
+            (let ((level (get-text-property pos 'trx-fade)))
+              (if (not level)
+                  (setq pos (or (next-single-property-change
+                                 pos 'trx-fade nil (point-max))
+                                (point-max)))
+                (let* ((face-val (or (get-text-property pos 'font-lock-face)
+                                     (get-text-property pos 'face)))
+                       (fg (or (trx--resolve-foreground face-val)
+                               (face-foreground 'default nil t)))
+                       (ratio (* 0.25 level))
+                       (blended (when fg
+                                  (trx--blend-color fg bg ratio))))
+                  (when blended
+                    (let ((ov (make-overlay pos (1+ pos))))
+                      (overlay-put ov 'face (list :foreground blended))
+                      (overlay-put ov 'trx-fade t)
+                      (push ov trx--fade-overlays))))
+                (setq pos (1+ pos))))))))))
 
 (defun trx-plural (n s)
   "Return a pluralized string expressing quantity N of thing S.
@@ -2089,22 +2213,26 @@ matches labels; prefix `!' negates."
     (setq trx-torrent-vector
           (trx-filter-apply trx-torrent-vector trx-filter-active)))
   (trx-do-entries trx-torrent-vector
-    (trx-eta .eta .percentDone)
-    (trx-size .sizeWhenDone)
+    (propertize (trx-eta .eta .percentDone) 'font-lock-face 'trx-torrent-size)
+    (propertize (trx-size .sizeWhenDone) 'font-lock-face 'trx-torrent-size)
     (format "%d%%" (* 100 (if (= 1 .metadataPercentComplete)
                               .percentDone .metadataPercentComplete)))
-    (format "%d" (trx-rate .rateDownload))
-    (format "%d" (trx-rate .rateUpload))
-    (format "%.1f" (if (> .uploadRatio 0) .uploadRatio 0))
+    (propertize (format "%d" (trx-rate .rateDownload))
+                'font-lock-face 'trx-torrent-download)
+    (propertize (format "%d" (trx-rate .rateUpload))
+                'font-lock-face 'trx-torrent-upload)
+    (propertize (format "%.1f" (if (> .uploadRatio 0) .uploadRatio 0))
+                'font-lock-face 'trx-torrent-size)
     (if (not (zerop .error)) (propertize "error" 'font-lock-face 'error)
       (trx-format-status .status .rateUpload .rateDownload))
-    (trx-when .addedDate)
+    (propertize (trx-when .addedDate) 'font-lock-face 'trx-torrent-size)
     (concat
-     (propertize .name 'trx-name t)
+     (propertize .name 'font-lock-face 'trx-torrent-name 'trx-name t)
      (mapconcat (lambda (l)
-                  (concat " " (propertize l 'font-lock-face 'font-lock-constant-face)))
+                  (concat " " (propertize l 'font-lock-face 'trx-torrent-label)))
                 .labels "")))
   (tabulated-list-print)
+  (trx--apply-fades)
   (trx--update-mode-line))
 
 (defun trx--update-mode-line ()
@@ -2128,13 +2256,16 @@ matches labels; prefix `!' negates."
   (let* ((files (trx-files-index (elt trx-torrent-vector 0)))
          (prefix (trx-files-prefix files)))
     (trx-do-entries files
-      (format "%d%%" (trx-percent .bytesCompleted .length))
-      (symbol-name (car (rassq .priority trx-priority-alist)))
+      (propertize (format "%d%%" (trx-percent .bytesCompleted .length))
+                  'font-lock-face 'trx-torrent-size)
+      (propertize (symbol-name (car (rassq .priority trx-priority-alist)))
+                  'font-lock-face 'trx-file-priority)
       (if (zerop .wanted) "no" "yes")
-      (trx-size .length)
+      (propertize (trx-size .length) 'font-lock-face 'trx-torrent-size)
       (propertize (if prefix (string-remove-prefix prefix .name) .name)
-                  'trx-name t)))
-  (tabulated-list-print))
+                  'font-lock-face 'trx-file-name 'trx-name t)))
+  (tabulated-list-print)
+  (trx--apply-fades))
 
 (defmacro trx-insert-each-when (&rest body)
   "Insert each non-nil form in BODY sequentially on its own line."
@@ -2193,14 +2324,19 @@ matches labels; prefix `!' negates."
          (response (trx-request "torrent-get" arguments)))
     (setq trx-torrent-vector (trx-torrents response)))
   (trx-do-entries (cdr (assq 'peers (elt trx-torrent-vector 0)))
-    .address
+    (propertize .address 'font-lock-face 'trx-peer-address)
     .flagStr
-    (format "%d%%" (trx-percent .progress 1.0))
-    (format "%d" (trx-rate .rateToClient))
-    (format "%d" (trx-rate .rateToPeer))
-    .clientName
-    (or (trx-geoip-retrieve .address) ""))
-  (tabulated-list-print))
+    (propertize (format "%d%%" (trx-percent .progress 1.0))
+                'font-lock-face 'trx-torrent-size)
+    (propertize (format "%d" (trx-rate .rateToClient))
+                'font-lock-face 'trx-torrent-download)
+    (propertize (format "%d" (trx-rate .rateToPeer))
+                'font-lock-face 'trx-torrent-upload)
+    (propertize .clientName 'font-lock-face 'trx-peer-client)
+    (propertize (or (trx-geoip-retrieve .address) "")
+                'font-lock-face 'trx-peer-location))
+  (tabulated-list-print)
+  (trx--apply-fades))
 
 (defun trx--set-default-directory ()
   "Set `default-directory' from the torrent's download directory."
@@ -2267,22 +2403,56 @@ simultaneously."
     (message "Killed %d torrent buffer%s" n (if (= n 1) "" "s"))))
 
 (defun trx-print-torrent (id cols)
-  "Insert a torrent entry at point using `tabulated-list-print-entry'.
-Put the mark tag in the padding area of the current line if the current
-torrent is marked.
-ID is a Lisp object identifying the entry to print, and COLS is a vector
-of column descriptors."
-  (tabulated-list-print-entry id cols)
-  (let* ((key (cl-ecase major-mode
-                (trx-mode 'hashString)
-                (trx-files-mode 'index)))
-         (item-id (cdr (assq key id))))
-    (when (member item-id trx-marked-ids)
-      (save-excursion
-        (forward-line -1)
-        (tabulated-list-put-tag ">")))))
+  "Insert a torrent entry with fade truncation and mark support.
+ID is a Lisp object identifying the entry to print, and COLS is
+a vector of column descriptors."
+  (let ((beg (point))
+        (x (max tabulated-list-padding 0))
+        (ncols (length tabulated-list-format))
+        (inhibit-read-only t))
+    (when (> tabulated-list-padding 0)
+      (insert (make-string x ?\s)))
+    (dotimes (n ncols)
+      (let* ((fmt (aref tabulated-list-format n))
+             (width (nth 1 fmt))
+             (props (nthcdr 3 fmt))
+             (right-align (plist-get props :right-align))
+             (pad-right (or (plist-get props :pad-right) 1))
+             (label (aref cols n))
+             (label-width (string-width label)))
+        (let ((face (or (get-text-property 0 'font-lock-face label)
+                       (get-text-property 0 'face label))))
+          (cond
+           ((= n (1- ncols))
+            (insert (trx--truncate
+                     label (- (window-width) x 1) face)))
+           (right-align
+            (let ((shift (- width label-width)))
+              (when (> shift 0) (insert (make-string shift ?\s)))
+              (insert label)
+              (insert (make-string pad-right ?\s))
+              (cl-incf x (+ width pad-right))))
+           (t
+            (insert (trx--truncate label width face))
+            (let ((pad (- width (min label-width width))))
+              (insert (make-string (+ pad pad-right) ?\s)))
+            (cl-incf x (+ width pad-right)))))))
+    (insert ?\n)
+    (put-text-property beg (point) 'tabulated-list-id id))
+  (trx--print-torrent-mark id))
 
-
+(defun trx--print-torrent-mark (id)
+  "Put the mark tag on the current line if ID is marked."
+  (let ((key (cl-case major-mode
+               (trx-mode 'hashString)
+               (trx-files-mode 'index))))
+    (when key
+      (let ((item-id (cdr (assq key id))))
+        (when (member item-id trx-marked-ids)
+          (save-excursion
+            (forward-line -1)
+            (tabulated-list-put-tag ">")))))))
+
 ;; Major mode definitions
 
 (defmacro define-trx-predicate (name test &rest body)
@@ -2353,6 +2523,7 @@ for explanation of the peer flags."
          ("Up" 3 trx-upload>? :right-align t :pad-right 2)
          ("Client" 20 t)
          ("Location" 0 t)])
+  (setq tabulated-list-printer #'trx-print-torrent)
   (tabulated-list-init-header)
   (add-hook 'post-command-hook #'trx-timer-check nil t)
   (setq-local revert-buffer-function #'trx-refresh-peers))

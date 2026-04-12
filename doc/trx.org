@@ -6,4 +6,4 @@ The comprehensive manual for =trx.el= is in [[file:../README.org][README.org]] a
 
 The ERT test suite (168 tests) is in =trx-test.el=.  Run it with =make test=.
 
-Jackett search integration is provided by =trx-jackett.el= (requires a running Jackett instance and =curl=).  The API key is auto-discovered from Jackett's =ServerConfig.json=.  Results are displayed with per-column faces and a fade-out effect on truncated text.  Jackett proxy links are resolved automatically (magnet redirects and .torrent downloads).
+Jackett search integration is provided by =trx-jackett.el= (requires a running Jackett instance and =curl=).  The API key is auto-discovered from Jackett's =ServerConfig.json=.  Per-column faces and fade-out truncation apply to all tabulated-list buffers: torrent list, file list, peers, and Jackett results.
