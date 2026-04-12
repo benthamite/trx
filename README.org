@@ -185,6 +185,8 @@ The command ~trx-add~ adds a torrent to the session.  It accepts a filename, URL
 
 If the argument is a readable file, its contents are base64-encoded and sent as metadata.  Otherwise, the string is sent as a filename/URL.  A bare info hash is automatically converted to a =magnet:= URI.
 
+When the guessed default looks like a URI or magnet link, ~trx-add~ uses ~read-string~ instead of ~read-file-name~ to avoid triggering TRAMP on hostnames embedded in the link.
+
 With a prefix argument (=C-u=), the command also prompts for a target download directory.  Without the prefix, the daemon's default download directory is used.
 
 ** Starting, stopping, and toggling

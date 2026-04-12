@@ -1205,7 +1205,10 @@ When called with a prefix, prompt for DIRECTORY."
           (prompt (concat "Add torrent" (if def (format " [%s]" (car def))) ": "))
           (history-add-new-input nil)
           (file-name-history (symbol-value trx-add-history-variable))
-          (input (read-file-name prompt nil def)))
+          (input (if (trx--uri-like-p (car def))
+                     (read-string prompt (car def)
+                                  trx-add-history-variable)
+                   (read-file-name prompt nil def))))
      (add-to-history trx-add-history-variable input)
      (list input
            (if current-prefix-arg
@@ -1227,6 +1230,11 @@ When called with a prefix, prompt for DIRECTORY."
                               (concat "magnet:?xt=urn:btih:" torrent)
                             torrent)))
            (when directory (list :download-dir (expand-file-name directory))))))
+
+(defun trx--uri-like-p (string)
+  "Return non-nil if STRING looks like a URI or magnet link."
+  (and (stringp string)
+       (string-match-p "\\`\\(?:magnet:\\|https?://\\|udp://\\)" string)))
 
 (defun trx-free (directory)
   "Show in the echo area how much free space is in DIRECTORY."
