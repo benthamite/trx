@@ -1,0 +1,575 @@
+#+title: trx: Interface to a Transmission session
+#+author: Pablo Stafforini
+#+email: pablo@stafforini.com
+#+language: en
+#+options: ':t toc:t author:t email:t num:t
+#+startup: content
+#+export_file_name: trx.info
+#+texinfo_filename: trx.info
+#+texinfo_dir_category: Emacs misc features
+#+texinfo_dir_title: Trx: (trx)
+#+texinfo_dir_desc: Interface to a Transmission session
+
+This manual describes the features and customization options for the Emacs Lisp file =trx.el=.
+
+* Overview
+:PROPERTIES:
+:CUSTOM_ID: h:overview
+:END:
+
+=trx.el= provides a full-featured Emacs interface to the [[https://transmissionbt.com/][Transmission]] BitTorrent client.  It communicates with a Transmission daemon over its JSON RPC protocol, allowing you to manage torrents entirely from within Emacs.
+
+The package is a renamed and improved fork of Mark Oteiza's =transmission.el=.  It retains the same architecture---a set of =tabulated-list-mode= buffers for different views---while adding several enhancements, including filtering, per-torrent detail buffers, labels, file renaming, and more robust connection handling.
+
+The interface is organized around four contexts, each with its own major mode:
+
+- *Torrent list* (~trx-mode~): the main entry point.  Shows all torrents with their status, progress, speeds, and ratio.  From here you can add, start, stop, remove, verify, and label torrents, set speed and ratio limits, and navigate to per-torrent detail views.
+- *File list* (~trx-files-mode~): shows the files within a single torrent.  You can toggle files for download, set per-file priorities, visit files on disk, copy them, rename them, or open them with external applications.
+- *Torrent info* (~trx-info-mode~): a read-only buffer displaying detailed metadata for a single torrent---dates, tracker statistics, peer origins, piece data, speed limits, and more.
+- *Peer list* (~trx-peers-mode~): shows connected peers with their addresses, flags, progress, transfer rates, client names, and optionally geolocated country names.
+
+All four contexts support automatic periodic refresh via a configurable timer, and all torrent-mutating commands operate on the torrent at point, on a region of torrents, or on explicitly marked items.
+
+The two primary entry points are ~trx~ (opens the torrent list) and ~trx-add~ (adds a torrent by filename, URL, magnet link, or info hash).  A global minor mode, ~trx-turtle-mode~, toggles Transmission's alternative speed limits ("turtle mode") and shows the active limits on the mode line.
+
+The package requires Emacs 24.4 or later and the =let-alist= library.  It also uses =auth-source= for optional RPC credential lookup.
+
+* User options
+:PROPERTIES:
+:CUSTOM_ID: h:user-options
+:END:
+
+** Connection settings
+:PROPERTIES:
+:CUSTOM_ID: h:connection-settings
+:END:
+
+#+vindex: trx-host
+#+vindex: trx-service
+#+vindex: trx-rpc-path
+#+vindex: trx-use-tls
+#+vindex: trx-request-timeout
+#+vindex: trx-rpc-auth
+The following options control how =trx.el= connects to the Transmission daemon.
+
+The user option ~trx-host~ specifies the host name, IP address, or Unix socket path of the Transmission session.  Its default value is ~"localhost"~.  If you set this to an absolute file path (e.g. ="/var/run/transmission/socket"=), the connection uses a local Unix socket instead of TCP.
+
+The user option ~trx-service~ specifies the port number or service name.  It accepts an integer, a string, or the default value ~9091~.  When ~trx-host~ is a socket path, this option is ignored.
+
+The user option ~trx-rpc-path~ specifies the HTTP path to the RPC endpoint.  The default is ~"/transmission/rpc"~.  You would change this if the daemon is behind a reverse proxy that remaps the path.
+
+The user option ~trx-use-tls~ controls whether the connection uses TLS.  Its default value is ~nil~.  When set to non-nil, Emacs must have been compiled with GnuTLS support.  TLS is not used for Unix socket connections.
+
+The user option ~trx-request-timeout~ sets the timeout in seconds for synchronous RPC requests.  The default is ~30~.  If the daemon is slow to respond (e.g. over a high-latency network), increase this value.
+
+The user option ~trx-rpc-auth~ holds authentication credentials for the RPC interface.  Its value is either ~nil~ (no authentication, the default) or a plist with =:username= and optionally =:password= keys.  If no password is provided but a username is set, =trx.el= searches ~auth-sources~ using the username, ~trx-host~, and ~trx-service~ to find one.
+
+** Display and formatting
+:PROPERTIES:
+:CUSTOM_ID: h:display-and-formatting
+:END:
+
+#+vindex: trx-units
+#+vindex: trx-digit-delimiter
+#+vindex: trx-time-format
+#+vindex: trx-time-zone
+The user option ~trx-units~ controls which unit system is used for displaying file sizes.  It accepts ~nil~ (the default, which uses the system default from ~file-size-human-readable~), ~si~ for SI units (powers of 1000), or ~iec~ for IEC units (powers of 1024).  This also affects the column width of size columns in the torrent and file lists.
+
+The user option ~trx-digit-delimiter~ specifies the character used to group digits in large numbers.  The default is ~","~ (comma).  You can set it to ~"."~ (full stop), ~nil~ (no grouping), or any other string.  Grouping is applied via ~calc-group-char~, so numbers below 10,000 are never grouped.
+
+The user option ~trx-time-format~ is a ~format-time-string~ format string used to display dates.  The default is ~"%a %b %e %T %Y %z"~, producing output like =Sat Apr 12 14:30:00 2026 -0300=.
+
+The user option ~trx-time-zone~ controls the time zone for formatted dates.  Possible values are ~nil~ (local time, the default), ~t~ (UTC), ~wall~ (system wall clock), or a time zone identifier string.
+
+** Pieces display
+:PROPERTIES:
+:CUSTOM_ID: h:pieces-display
+:END:
+
+#+vindex: trx-pieces-function
+The user option ~trx-pieces-function~ determines how incomplete torrent pieces are visualized in the info buffer ([[#h:viewing-torrent-info][Viewing torrent info]]).  It accepts a function that takes a base64-encoded bitfield string and a piece count, and returns a string.  The built-in choices are:
+
+- ~trx-format-pieces~: displays a full binary bitfield, wrapping at 72 characters per line.
+- ~trx-format-pieces-brief~: displays a compact one-line greyscale bar, where each character represents a group of pieces.  On terminals with 256 or more colors, it uses background colors; on fewer, it uses Unicode block characters.
+- ~nil~: disables pieces display entirely.
+
+The default value is ~#'trx-format-pieces~.
+
+** Refresh and timer
+:PROPERTIES:
+:CUSTOM_ID: h:refresh-and-timer
+:END:
+
+#+vindex: trx-refresh-modes
+#+vindex: trx-refresh-interval
+The user option ~trx-refresh-modes~ is a list of major modes in which buffers should automatically refresh.  When a buffer's major mode appears in this list, a timer periodically calls ~revert-buffer~.  The available modes are ~trx-mode~, ~trx-files-mode~, ~trx-info-mode~, and ~trx-peers-mode~.  The default is an empty list, meaning no automatic refresh.  To enable live updates in the torrent list, for example:
+
+#+begin_src emacs-lisp
+(setopt trx-refresh-modes '(trx-mode))
+#+end_src
+
+The user option ~trx-refresh-interval~ sets the period in seconds between automatic refreshes.  The default is ~2~.  The value must be positive.  After five consecutive refresh failures, the timer disables itself and displays a warning.
+
+** Torrent guessing
+:PROPERTIES:
+:CUSTOM_ID: h:torrent-guessing
+:END:
+
+#+vindex: trx-torrent-functions
+#+vindex: trx-add-history-variable
+The user option ~trx-torrent-functions~ is a list of functions used to guess a torrent source when calling ~trx-add~ interactively ([[#h:adding-torrents][Adding torrents]]).  Each function takes no arguments and returns a string (a filename, URL, magnet link, or info hash) or ~nil~.  The results are offered as defaults in the prompt.  The built-in options are:
+
+- ~trx-ffap~: returns a file name, URL, or info hash at point, using text properties, ~file-name-at-point-functions~, ~url-get-url-at-point~, and ~thing-at-point~.
+- ~trx-ffap-selection~: applies ~trx-ffap~ to the current graphical selection.
+- ~trx-ffap-last-killed~: applies ~trx-ffap~ to the most recent ~kill-ring~ entry.
+
+All three are enabled by default.
+
+The user option ~trx-add-history-variable~ specifies the history list variable used by ~trx-add~ prompts.  The default is ~trx-add-history~.  Consider adding this variable to ~savehist-additional-variables~ so that your torrent addition history persists across sessions.
+
+** Tracker settings
+:PROPERTIES:
+:CUSTOM_ID: h:tracker-settings
+:END:
+
+#+vindex: trx-trackers
+#+vindex: trx-tracker-history-variable
+The user option ~trx-trackers~ is a list of tracker URLs offered for completion when adding or replacing trackers ([[#h:tracker-management][Tracker management]]).  It defaults to an empty list.  Populate it with your preferred trackers so they appear alongside the auto-collected announce URLs from your existing torrents.
+
+The user option ~trx-tracker-history-variable~ specifies the history list variable used by tracker commands.  The default is ~trx-tracker-history~.  As with ~trx-add-history-variable~, consider adding it to ~savehist-additional-variables~.
+
+** External commands and GeoIP
+:PROPERTIES:
+:CUSTOM_ID: h:external-commands-and-geoip
+:END:
+
+#+vindex: trx-files-command-functions
+#+vindex: trx-geoip-function
+#+vindex: trx-geoip-use-cache
+The user option ~trx-files-command-functions~ is a list of functions used to guess default applications for running on files ([[#h:running-commands-on-files][Running commands on files]]).  Each function accepts a list of file names and returns a list of command strings or ~nil~.  The default includes ~mailcap-file-default-commands~, which uses the system's MIME type database.
+
+The user option ~trx-geoip-function~ specifies a function used to translate IP addresses into location names, shown in the "Location" column of the peer list ([[#h:viewing-peers][Viewing peers]]).  The function should accept an IP address string and return a location name string or ~nil~.  The built-in option ~trx-geoiplookup~ shells out to the =geoiplookup= (or =geoiplookup6= for IPv6) command-line tool.  The default is ~nil~, meaning no geolocation.
+
+The user option ~trx-geoip-use-cache~ controls whether IP-to-location results are cached in memory.  When set to non-nil, results are stored in an internal hash table, avoiding repeated lookups.  This is useful when ~trx-geoip-function~ is slow or does not have its own caching.  The default is ~nil~.
+
+** Turtle mode appearance
+:PROPERTIES:
+:CUSTOM_ID: h:turtle-mode-appearance
+:END:
+
+#+vindex: trx-turtle-lighter
+The user option ~trx-turtle-lighter~ controls the mode-line lighter text for ~trx-turtle-mode~ ([[#h:turtle-mode][Turtle mode]]).  The default is ~" turtle"~.  Alternative choices include ~" ,=,e"~ (ASCII art) and ~" \U0001f422"~ (turtle emoji).  When turtle mode is active, the lighter is appended with the current down/up speed limits.
+
+* Commands
+:PROPERTIES:
+:CUSTOM_ID: h:commands
+:END:
+
+** Opening the torrent list
+:PROPERTIES:
+:CUSTOM_ID: h:opening-the-torrent-list
+:END:
+
+#+findex: trx
+The command ~trx~ is the main entry point.  It opens a =*trx*= buffer in ~trx-mode~ showing all torrents in the connected Transmission session.  If the buffer already exists, it is reused.  On first invocation, it establishes a network connection to the daemon, initializes turtle mode polling, and caches session data.
+
+Invoke it with =M-x trx=.
+
+** Adding torrents
+:PROPERTIES:
+:CUSTOM_ID: h:adding-torrents
+:END:
+
+#+findex: trx-add
+The command ~trx-add~ adds a torrent to the session.  It accepts a filename, URL, magnet link, or bare 40-character info hash.  When called interactively, it uses ~trx-torrent-functions~ to guess a default from context---the file at point, the graphical selection, or the most recent kill ring entry ([[#h:torrent-guessing][Torrent guessing]]).
+
+If the argument is a readable file, its contents are base64-encoded and sent as metadata.  Otherwise, the string is sent as a filename/URL.  A bare info hash is automatically converted to a =magnet:= URI.
+
+With a prefix argument (=C-u=), the command also prompts for a target download directory.  Without the prefix, the daemon's default download directory is used.
+
+** Starting, stopping, and toggling
+:PROPERTIES:
+:CUSTOM_ID: h:starting-stopping-and-toggling
+:END:
+
+#+findex: trx-toggle
+The command ~trx-toggle~ toggles selected torrents between started and stopped states.  It queries the current status of the first selected torrent and sends the opposite action.  This makes it a convenient single key (=s= in the torrent list) for pausing and resuming.
+
+** Removing and deleting torrents
+:PROPERTIES:
+:CUSTOM_ID: h:removing-and-deleting-torrents
+:END:
+
+#+findex: trx-remove
+#+findex: trx-delete
+The command ~trx-remove~ prompts to remove selected torrents from the session.  With a prefix argument, it also deletes (unlinks) the downloaded data from disk.  The prompt clearly indicates whether data deletion is requested.
+
+The command ~trx-delete~ is a shortcut that always deletes both the torrent and its data.  It prompts for confirmation with ~yes-or-no-p~ given the destructive nature of the operation.
+
+Both commands clear any active marks and deactivate the region after execution.
+
+** Verifying torrents
+:PROPERTIES:
+:CUSTOM_ID: h:verifying-torrents
+:END:
+
+#+findex: trx-verify
+The command ~trx-verify~ asks Transmission to verify the integrity of selected torrents by re-checking their data against the torrent's piece hashes.  It prompts for confirmation before proceeding.
+
+** Moving torrents
+:PROPERTIES:
+:CUSTOM_ID: h:moving-torrents
+:END:
+
+#+findex: trx-move
+The command ~trx-move~ relocates selected torrents to a new directory.  It prompts for the target directory and asks for confirmation before sending the move request to the daemon.  The move is performed server-side, so the daemon must have write access to the target location.
+
+** Reannouncing
+:PROPERTIES:
+:CUSTOM_ID: h:reannouncing
+:END:
+
+#+findex: trx-reannounce
+The command ~trx-reannounce~ forces a tracker re-announce for selected torrents.  This is useful when you want to immediately update peer information rather than waiting for the next scheduled announce cycle.
+
+** Setting labels
+:PROPERTIES:
+:CUSTOM_ID: h:setting-labels
+:END:
+
+#+findex: trx-label
+The command ~trx-label~ sets labels on selected torrents.  It prompts for label strings, offering completion from all labels currently in use across the session.  Labels are displayed alongside the torrent name in the torrent list, styled with ~font-lock-constant-face~.
+
+You can enter multiple labels by typing each one and pressing =RET=; an empty input finishes the list.
+
+** Filtering the torrent list
+:PROPERTIES:
+:CUSTOM_ID: h:filtering-the-torrent-list
+:END:
+
+#+findex: trx-filter
+#+findex: trx-filter-clear
+The command ~trx-filter~ restricts the torrent list to entries matching a filter string.  Three filter types are supported:
+
+- *Plain text*: matches torrent names case-insensitively.  For example, =ubuntu= shows only torrents whose names contain "ubuntu".
+- *Status prefix*: =status:X= matches torrents whose status contains =X=.  Valid statuses are =stopped=, =verifywait=, =verifying=, =downwait=, =downloading=, =seedwait=, and =seeding=.
+- *Label prefix*: =label:X= matches torrents that have a label containing =X=.
+- *Negation*: prefixing any filter with =!= inverts the match.  For example, =!status:stopped= shows all torrents that are not stopped.
+
+The filter persists across refreshes until cleared.  The command ~trx-filter-clear~ removes the active filter and shows all torrents again.  In the torrent list, =/ is bound to ~trx-filter~ and =\= to ~trx-filter-clear~.
+
+** Speed and ratio limits
+:PROPERTIES:
+:CUSTOM_ID: h:speed-and-ratio-limits
+:END:
+
+*** Global session limits
+:PROPERTIES:
+:CUSTOM_ID: h:global-session-limits
+:END:
+
+#+findex: trx-set-download
+#+findex: trx-set-upload
+#+findex: trx-set-ratio
+The command ~trx-set-download~ sets the global download speed limit in kB/s.  The prompt shows the current limit and whether it is enabled.  A value of zero or less disables the limit.
+
+The command ~trx-set-upload~ does the same for the upload speed limit.
+
+The command ~trx-set-ratio~ sets the global seed ratio limit.  A negative value disables the limit.
+
+*** Per-torrent limits
+:PROPERTIES:
+:CUSTOM_ID: h:per-torrent-limits
+:END:
+
+#+findex: trx-set-torrent-download
+#+findex: trx-set-torrent-upload
+#+findex: trx-set-torrent-ratio
+#+findex: trx-toggle-limits
+The command ~trx-set-torrent-download~ sets the download speed limit for selected torrents.  When a single torrent is selected, the prompt shows its current limit and whether it is enabled.  A negative value disables the per-torrent limit.
+
+The command ~trx-set-torrent-upload~ does the same for the upload speed limit.
+
+The command ~trx-set-torrent-ratio~ sets the seed ratio mode and limit for selected torrents.  It first prompts for a mode---~session~ (use the global limit), ~torrent~ (use a torrent-specific limit), or ~unlimited~---and then, if ~torrent~ is chosen, prompts for the numeric limit.
+
+The command ~trx-toggle-limits~ toggles whether selected torrents honor session-level speed limits.  When a torrent honors session limits, both the session and torrent limits apply; otherwise, only the torrent's own limits are enforced.
+
+** Bandwidth priority
+:PROPERTIES:
+:CUSTOM_ID: h:bandwidth-priority
+:END:
+
+#+findex: trx-set-bandwidth-priority
+The command ~trx-set-bandwidth-priority~ sets the bandwidth priority for selected torrents.  It prompts with completion for one of three levels: ~low~, ~normal~, or ~high~.
+
+** Queue management
+:PROPERTIES:
+:CUSTOM_ID: h:queue-management
+:END:
+
+#+findex: trx-queue-move-top
+#+findex: trx-queue-move-bottom
+#+findex: trx-queue-move-up
+#+findex: trx-queue-move-down
+Transmission maintains a download queue.  Four commands control position within it:
+
+- ~trx-queue-move-top~ moves selected torrents to the top of the queue.
+- ~trx-queue-move-bottom~ moves them to the bottom.
+- ~trx-queue-move-up~ moves them one position up.
+- ~trx-queue-move-down~ moves them one position down.
+
+Each command prompts for confirmation.
+
+** Tracker management
+:PROPERTIES:
+:CUSTOM_ID: h:tracker-management
+:END:
+
+#+findex: trx-trackers-add
+#+findex: trx-trackers-remove
+#+findex: trx-trackers-replace
+The command ~trx-trackers-add~ adds announce URLs to selected torrents.  It offers completion from ~trx-trackers~ and from all announce URLs currently in use across the session, excluding trackers already present on the selected torrent.  You can enter multiple URLs; an empty input finishes the list.
+
+The command ~trx-trackers-remove~ removes trackers from the torrent at point.  It displays each tracker's announce URL annotated with its numeric ID.  You can select trackers by URL or by ID.
+
+The command ~trx-trackers-replace~ substitutes one tracker for another on the torrent at point.  It first prompts for the tracker to replace, then for the replacement URL.
+
+** Viewing torrent info
+:PROPERTIES:
+:CUSTOM_ID: h:viewing-torrent-info
+:END:
+
+#+findex: trx-info
+The command ~trx-info~ opens a ~trx-info-mode~ buffer for the torrent at point.  The buffer displays comprehensive metadata including:
+
+- Torrent ID, name, info hash, and magnet link.
+- Labels, download location, percent done, bandwidth priority, and queue position.
+- Current speed with per-torrent and session limit indicators.
+- Seed ratio and ratio mode.
+- Error or warning messages, if any.
+- Peer summary: connected count, uploading/downloading counts, unchoked and interested peers, and peer origin breakdown (cache, DHT, incoming, LPD, LTEP, PEX, trackers).
+- Dates: created, added, finished, and last activity.
+- Per-tracker statistics: announce URL, tier, peer count, seeder/leecher/download counts, last and next announce/scrape times, and any error results.
+- Size information: wanted, downloaded, verified, corrupt, and total sizes.
+- Piece data: count, completion percentage, piece size, and a visual representation controlled by ~trx-pieces-function~ ([[#h:pieces-display][Pieces display]]).
+
+Each torrent gets its own named buffer (e.g. =*trx-info: Ubuntu 24.04*=), so you can view info for multiple torrents simultaneously.  The info buffer supports key bindings for setting per-torrent limits, adding/removing trackers, setting labels, copying the magnet link, and navigating to the file list or peer list.
+
+** Viewing torrent files
+:PROPERTIES:
+:CUSTOM_ID: h:viewing-torrent-files
+:END:
+
+#+findex: trx-files
+The command ~trx-files~ opens a ~trx-files-mode~ buffer for the torrent at point.  The tabulated list shows each file's completion percentage, priority (low/normal/high), wanted status, size, and name.  Files sharing a common directory prefix have the prefix stripped for readability.
+
+*** Toggling file download
+:PROPERTIES:
+:CUSTOM_ID: h:toggling-file-download
+:END:
+
+#+findex: trx-files-want
+#+findex: trx-files-unwant
+The command ~trx-files-want~ tells Transmission to download selected files.  The command ~trx-files-unwant~ tells it to skip them.  Both operate on files at point, in the active region, or marked.
+
+*** Setting file priority
+:PROPERTIES:
+:CUSTOM_ID: h:setting-file-priority
+:END:
+
+#+findex: trx-files-priority
+The command ~trx-files-priority~ sets the bandwidth priority for selected files.  It prompts with completion for ~low~, ~normal~, or ~high~.
+
+*** Visiting and opening files
+:PROPERTIES:
+:CUSTOM_ID: h:visiting-and-opening-files
+:END:
+
+#+findex: trx-find-file
+#+findex: trx-find-file-other-window
+#+findex: trx-display-file
+#+findex: trx-view-file
+#+findex: trx-browse-url-of-file
+#+findex: trx-dired-file
+Several commands let you interact with downloaded files directly:
+
+- ~trx-find-file~ (=RET=) visits the file at point in a read-only buffer.
+- ~trx-find-file-other-window~ (=o=) does the same in another window.
+- ~trx-display-file~ (=C-o=) displays the file in another window without selecting it.
+- ~trx-view-file~ (=v=) opens the file in View mode.
+- ~trx-browse-url-of-file~ (=W=) opens the file in a web browser.
+- ~trx-dired-file~ (=d=) opens the file's directory in Dired, with point on the file.
+
+If the file does not exist at its expected path, these commands also check for a =.part= suffix (a Transmission convention for incomplete files).
+
+*** Running commands on files
+:PROPERTIES:
+:CUSTOM_ID: h:running-commands-on-files
+:END:
+
+#+findex: trx-files-command
+The command ~trx-files-command~ runs an external shell command on the file at point.  It uses ~trx-files-command-functions~ to suggest a default application based on the file's MIME type ([[#h:external-commands-and-geoip][External commands and GeoIP]]).  The command is run asynchronously via ~start-process~.
+
+*** Copying and renaming files
+:PROPERTIES:
+:CUSTOM_ID: h:copying-and-renaming-files
+:END:
+
+#+findex: trx-copy-file
+#+findex: trx-rename-path
+#+findex: trx-copy-filename-as-kill
+#+findex: trx-copy-magnet
+The command ~trx-copy-file~ copies the file at point to another location.  When ~dired-dwim-target~ is non-nil, the default target is the directory shown in the next window, mirroring Dired's behavior.
+
+The command ~trx-rename-path~ renames a torrent file via the Transmission RPC.  This updates the file's name within the torrent metadata, not just on disk.  After renaming, all open file-list buffers for the same torrent are automatically refreshed.
+
+The command ~trx-copy-filename-as-kill~ copies the file name at point into the kill ring.  With a prefix argument, it copies the absolute path instead of just the base name.
+
+The command ~trx-copy-magnet~ copies the magnet link for the current torrent to the kill ring.
+
+** Viewing peers
+:PROPERTIES:
+:CUSTOM_ID: h:viewing-peers
+:END:
+
+#+findex: trx-peers
+The command ~trx-peers~ opens a ~trx-peers-mode~ buffer for the torrent at point.  It displays a table of connected peers with columns for address, flags, progress, download rate, upload rate, client name, and location.
+
+The flags column uses the same notation as =transmission-remote(1)=; see the [[https://github.com/transmission/transmission/blob/main/docs/Peer-Status-Text.md][Peer Status Text]] documentation for details.
+
+The location column is populated by ~trx-geoip-function~ ([[#h:external-commands-and-geoip][External commands and GeoIP]]).  If no geolocation function is configured, the column is left blank.
+
+** Marking items
+:PROPERTIES:
+:CUSTOM_ID: h:marking-items
+:END:
+
+#+findex: trx-toggle-mark
+#+findex: trx-unmark-all
+#+findex: trx-invert-marks
+Marks let you apply commands to multiple items at once.  Marked items are indicated with a =>=  character in the left margin.
+
+The command ~trx-toggle-mark~ (=m=) toggles the mark on the item at point.  If the region is active, it toggles all items in the region.  With a numeric prefix argument, it marks that many items forward (or backward if negative).
+
+The command ~trx-unmark-all~ (=U=) removes all marks in the current buffer.
+
+The command ~trx-invert-marks~ (=t=) toggles the mark on every item, switching marked items to unmarked and vice versa.
+
+When marks are active, commands such as ~trx-toggle~, ~trx-remove~, and the speed limit commands operate on all marked items.  The prompts indicate how many items are affected (e.g. =[3 marked]=).
+
+** Turtle mode
+:PROPERTIES:
+:CUSTOM_ID: h:turtle-mode
+:END:
+
+#+findex: trx-turtle-mode
+#+findex: trx-turtle-status
+#+findex: trx-turtle-set-speeds
+#+findex: trx-turtle-set-days
+#+findex: trx-turtle-set-times
+Transmission's "turtle mode" (alternative speed limits) provides a way to throttle bandwidth during certain times.  =trx.el= exposes this as the global minor mode ~trx-turtle-mode~.
+
+Toggling ~trx-turtle-mode~ immediately enables or disables alternative speed limits on the daemon.  When active, the mode line shows the lighter (configured by ~trx-turtle-lighter~; see [[#h:turtle-mode-appearance][Turtle mode appearance]]) followed by the current down/up limits in kB/s (e.g. =turtle:500/100=).
+
+A background polling mechanism keeps the mode-line indicator synchronized with the daemon's state and schedules.  When a turtle mode schedule changes the daemon's state (e.g. turtle mode is configured to activate on weekdays from 09:00 to 17:00), the mode line updates automatically.
+
+The command ~trx-turtle-status~ messages a summary of the current turtle mode configuration: whether it is enabled, the speed limits, whether the schedule is enabled, the active time span, and the active days.
+
+The command ~trx-turtle-set-speeds~ prompts for new upload and download speed limits for turtle mode.
+
+The command ~trx-turtle-set-days~ sets which days of the week turtle mode's schedule is active.  The available day names are ~sun~, ~mon~, ~tues~, ~wed~, ~thurs~, ~fri~, ~sat~, ~weekday~, ~weekend~, and ~all~.  You can enter multiple days; an empty input finishes the list.  With a prefix argument, the schedule is disabled entirely.
+
+The command ~trx-turtle-set-times~ sets the begin and end times for the turtle mode schedule.  Times are entered as human-readable strings (e.g. =9:00= or =5pm=) and parsed by ~diary-entry-time~.
+
+** Session statistics and free space
+:PROPERTIES:
+:CUSTOM_ID: h:session-statistics-and-free-space
+:END:
+
+#+findex: trx-stats
+#+findex: trx-free
+The command ~trx-stats~ displays a summary of the Transmission session in the echo area: current download and upload rates, active and total torrent counts, total data received and sent, and session uptime.
+
+The command ~trx-free~ prompts for a directory and displays how much free space is available there, as reported by the Transmission daemon.
+
+** Quitting
+:PROPERTIES:
+:CUSTOM_ID: h:quitting
+:END:
+
+#+findex: trx-quit
+The command ~trx-quit~ buries or closes the current Trx buffer.  If the buffer was not previously displayed in the window, it calls ~quit-window~ (which restores the previous buffer).  If the frame has only one window, it buries the buffer; otherwise, it deletes the window.
+
+#+findex: trx-kill-torrent-buffers
+The command ~trx-kill-torrent-buffers~ kills all per-torrent detail buffers (file lists, info buffers, and peer lists) at once, providing a quick way to clean up after a session.
+
+* Functions
+:PROPERTIES:
+:CUSTOM_ID: h:functions
+:END:
+
+** Torrent source detection
+:PROPERTIES:
+:CUSTOM_ID: h:torrent-source-detection
+:END:
+
+#+findex: trx-ffap
+#+findex: trx-ffap-selection
+#+findex: trx-ffap-last-killed
+The function ~trx-ffap~ returns a file name, URL, or info hash at point.  It checks, in order: the =shr-url= text property (for links in =shr= buffers), the =:nt-link= text property, ~file-name-at-point-functions~, ~url-get-url-at-point~, and finally whether the word at point is a 40-character hexadecimal info hash.  It returns ~nil~ if nothing is found.
+
+The function ~trx-ffap-selection~ applies ~trx-ffap~ to the current graphical selection (clipboard).
+
+The function ~trx-ffap-last-killed~ applies ~trx-ffap~ to the most recent entry in ~kill-ring~.
+
+These functions are the defaults for ~trx-torrent-functions~ ([[#h:torrent-guessing][Torrent guessing]]) and can also be used in custom hooks or scripts.
+
+** Geolocation
+:PROPERTIES:
+:CUSTOM_ID: h:geolocation
+:END:
+
+#+findex: trx-geoiplookup
+The function ~trx-geoiplookup~ translates an IP address into a country name by calling the external =geoiplookup= program (or =geoiplookup6= for IPv6 addresses).  It returns ~nil~ if the program is not installed.  This function is the built-in option for ~trx-geoip-function~ ([[#h:external-commands-and-geoip][External commands and GeoIP]]).
+
+** Formatting utilities
+:PROPERTIES:
+:CUSTOM_ID: h:formatting-utilities
+:END:
+
+#+findex: trx-format-pieces
+#+findex: trx-format-pieces-brief
+#+findex: trx-group-digits
+The function ~trx-format-pieces~ renders a base64-encoded bitfield as a binary string, showing each piece as =0= or =1=, wrapped at 72 characters per line.  It is one of the built-in options for ~trx-pieces-function~.
+
+The function ~trx-format-pieces-brief~ renders a bitfield as a compact greyscale bar.  It divides the pieces into 72 groups and represents each group's completion ratio as a single character or colored space, depending on the terminal's color capabilities.
+
+The function ~trx-group-digits~ formats a positive integer with digit grouping according to ~trx-digit-delimiter~.  Numbers below 10,000 are returned without grouping.
+
+** RPC communication
+:PROPERTIES:
+:CUSTOM_ID: h:rpc-communication
+:END:
+
+#+findex: trx-request
+#+findex: trx-request-async
+The function ~trx-request~ sends a synchronous RPC request to the Transmission daemon and returns the parsed JSON response.  It handles session ID negotiation (409 responses), transient failures with one automatic retry, and connection pooling.  Most interactive commands use ~trx-request-async~ instead, but ~trx-request~ is available for scripting and non-interactive use.
+
+The function ~trx-request-async~ sends an asynchronous RPC request.  Its first argument is a callback function that receives the parsed JSON response.  This is the preferred method for interactive commands, as it does not block Emacs while waiting for the daemon's reply.
+
+* Indices
+:PROPERTIES:
+:CUSTOM_ID: h:indices
+:END:
+
+** Function index
+:PROPERTIES:
+:INDEX: fn
+:CUSTOM_ID: h:function-index
+:END:
+
+** Variable index
+:PROPERTIES:
+:INDEX: vr
+:CUSTOM_ID: h:variable-index
+:END:
