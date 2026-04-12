@@ -2070,6 +2070,7 @@ matches labels; prefix `!' negates."
   (let* ((arguments `(:ids ,id :fields ,trx-draw-files-keys))
          (response (trx-request "torrent-get" arguments)))
     (setq trx-torrent-vector (trx-torrents response)))
+  (trx--set-default-directory)
   (let* ((files (trx-files-index (elt trx-torrent-vector 0)))
          (prefix (trx-files-prefix files)))
     (trx-do-entries files
@@ -2093,6 +2094,7 @@ matches labels; prefix `!' negates."
   (let* ((arguments `(:ids ,id :fields ,trx-draw-info-keys))
          (response (trx-request "torrent-get" arguments)))
     (setq trx-torrent-vector (trx-torrents response)))
+  (trx--set-default-directory)
   (erase-buffer)
   (let-alist (elt trx-torrent-vector 0)
     (trx-insert-each-when
@@ -2145,6 +2147,12 @@ matches labels; prefix `!' negates."
     .clientName
     (or (trx-geoip-retrieve .address) ""))
   (tabulated-list-print))
+
+(defun trx--set-default-directory ()
+  "Set `default-directory' from the torrent's download directory."
+  (let ((dir (cdr (assq 'downloadDir (elt trx-torrent-vector 0)))))
+    (when (and dir (file-directory-p dir))
+      (setq default-directory (file-name-as-directory dir)))))
 
 (defmacro define-trx-refresher (name)
   "Define a function `trx-refresh-NAME' that refreshes a context buffer.

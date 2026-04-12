@@ -363,6 +363,8 @@ Each torrent gets its own named buffer (e.g. =*trx-info: Ubuntu 24.04*=), so you
 #+findex: trx-files
 The command ~trx-files~ opens a ~trx-files-mode~ buffer for the torrent at point.  The tabulated list shows each file's completion percentage, priority (low/normal/high), wanted status, size, and name.  Files sharing a common directory prefix have the prefix stripped for readability.
 
+In both ~trx-files-mode~ and ~trx-info-mode~ buffers, ~default-directory~ is set to the torrent's download directory.  This means that commands like ~eshell~, ~dired~, and ~shell-command~ automatically start in the right location.
+
 *** Toggling file download
 :PROPERTIES:
 :CUSTOM_ID: h:toggling-file-download
