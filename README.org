@@ -496,6 +496,21 @@ The torrent list mode line also shows a live summary: active/total torrent count
 
 The command ~trx-free~ prompts for a directory and displays how much free space is available there, as reported by the Transmission daemon.
 
+** Daemon management
+:PROPERTIES:
+:CUSTOM_ID: h:daemon-management
+:END:
+
+#+findex: trx-daemon-start
+#+findex: trx-daemon-stop
+#+vindex: trx-daemon-program
+#+vindex: trx-daemon-auto-start
+The command ~trx-daemon-start~ starts the Transmission daemon as a background process.  The command ~trx-daemon-stop~ sends a =session-close= RPC request to shut it down gracefully.
+
+The user option ~trx-daemon-program~ specifies the daemon executable name (default: ~"transmission-daemon"~).
+
+The user option ~trx-daemon-auto-start~, when non-nil, causes =trx= to automatically start the daemon when it cannot connect.  After starting the daemon, it waits briefly and retries the connection.
+
 ** Quitting
 :PROPERTIES:
 :CUSTOM_ID: h:quitting

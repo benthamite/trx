@@ -235,6 +235,14 @@ caching built in or is otherwise slow."
          (when (fboundp 'trx-turtle-poll) (trx-turtle-poll)))
   :link '(info-link "(elisp) Defining Minor Modes"))
 
+(defcustom trx-daemon-program "transmission-daemon"
+  "Program name for the Transmission daemon."
+  :type 'string)
+
+(defcustom trx-daemon-auto-start nil
+  "Whether to auto-start the daemon when connection fails."
+  :type 'boolean)
+
 (defconst trx-schedules
   (eval-when-compile
     (pcase-let*
@@ -487,8 +495,15 @@ When `trx-use-tls' is non-nil, the connection uses TLS."
                        :noquery t :coding 'utf-8))
               (setq buffer nil process nil))
           (file-error
-           (user-error "Cannot connect to Transmission at %s:%s -- %s"
-                       trx-host trx-service (error-message-string err))))
+           (if (and trx-daemon-auto-start
+                    (executable-find trx-daemon-program))
+               (progn
+                 (start-process "trx-daemon" nil trx-daemon-program)
+                 (message "Started %s, retrying..." trx-daemon-program)
+                 (sit-for 1)
+                 (trx-make-network-process))
+             (user-error "Cannot connect to Transmission at %s:%s -- %s"
+                         trx-host trx-service (error-message-string err)))))
       (when (process-live-p process) (kill-process process))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
@@ -1588,6 +1603,22 @@ See `trx-read-time' for details on time input."
         (bury-buffer)
       (delete-window))))
 
+(defun trx-daemon-start ()
+  "Start the Transmission daemon.
+Uses `trx-daemon-program' to locate the executable."
+  (interactive)
+  (if (not (executable-find trx-daemon-program))
+      (user-error "Cannot find %s" trx-daemon-program)
+    (start-process "trx-daemon" nil trx-daemon-program)
+    (message "Started %s" trx-daemon-program)))
+
+(defun trx-daemon-stop ()
+  "Stop the Transmission daemon via the RPC interface."
+  (interactive)
+  (trx-request-async
+   (lambda (_) (message "Transmission daemon stopped"))
+   "session-close"))
+
 (defun trx-rename-path (path new-name)
   "Rename the torrent file at point.
 PATH is the current file path, NEW-NAME is the desired new name."
@@ -2555,6 +2586,9 @@ for explanation of the peer flags."
      ["Set Active Days" trx-turtle-set-days]
      ["Set Active Time Span" trx-turtle-set-times]
      ["Set Turtle Speed Limits" trx-turtle-set-speeds])
+    ("Daemon"
+     ["Start Daemon" trx-daemon-start]
+     ["Stop Daemon" trx-daemon-stop])
     "--"
     ["Filter Torrents" trx-filter]
     ["Clear Filter" trx-filter-clear]
