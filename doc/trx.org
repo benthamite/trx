@@ -11,3 +11,5 @@ Jackett search integration is provided by =trx-jackett.el= (requires a running J
 Bug fixes: =trx-files-file-at-point= now correctly signals an error for non-existent files; =trx-turtle-when= computes correct wrap-around times for schedules spanning midnight; =trx-draw-files= handles both boolean and numeric =wanted= values from the Transmission RPC; =trx-jackett--url= URL-encodes the API key; =trx-jackett--fetch= cleans up its buffer if =curl= cannot be started.
 
 Structural: =trx-current-torrent= and =trx-current-torrent-from= centralize access to the current torrent alist.  =trx-set-torrent-download= and =trx-set-torrent-upload= share a common =trx--set-torrent-speed-limit= helper.
+
+Clarity: =trx-format-minutes= uses direct arithmetic instead of a timezone-dependent epoch hack.  =trx-slice= parameter renamed to match its docstring.  =trx-pieces-display-width= replaces a magic 72.  =trx-turtle-when= and =trx-ratio->256= docstrings explain the underlying logic.

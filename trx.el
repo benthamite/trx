@@ -739,19 +739,18 @@ After 5 consecutive failures, cancel the timer."
   "Return the percentage of HAVE by TOTAL."
   (if (zerop total) 0 (/ (* 100.0 have) total)))
 
-(defun trx-slice (str k)
+(defun trx-slice (string k)
   "Slice STRING into K strings of somewhat equal size.
-The result can have no more elements than STRING.
-\n(fn STRING K)"
-  (let ((len (length str)))
+The result can have no more elements than STRING."
+  (let ((len (length string)))
     (let ((quotient (/ len k))
           (remainder (% len k))
           (i 0)
           slice result)
-      (while (and (/= 0 (setq len (length str))) (< i k))
+      (while (and (/= 0 (setq len (length string))) (< i k))
         (setq slice (if (< i remainder) (1+ quotient) quotient))
-        (push (substring str 0 (min slice len)) result)
-        (setq str (substring str (min slice len) len))
+        (push (substring string 0 (min slice len)) result)
+        (setq string (substring string (min slice len) len))
         (cl-incf i))
       (nreverse result))))
 
@@ -881,7 +880,7 @@ Returns minutes from midnight, otherwise nil."
 
 (defun trx-format-minutes (minutes)
   "Return a formatted string from MINUTES from midnight."
-  (format-time-string "%H:%M" (seconds-to-time (* 60 (+ 300 minutes)))))
+  (format "%02d:%02d" (/ minutes 60) (% minutes 60)))
 
 (defun trx-n->days (n)
   "Return days corresponding to bitfield N.
@@ -905,8 +904,11 @@ Days are the keys of `trx-schedules'."
 
 (defun trx-turtle-when (beg end &optional now)
   "Calculate the time in seconds until the next schedule change.
-BEG END are minutes after midnight of schedules start and end.
-NOW is a time, defaulting to `current-time'."
+BEG and END are minutes after midnight of schedule start and end.
+NOW is a time, defaulting to `current-time'.
+Uses cyclic ordering of (now, BEG, END) on the 24-hour clock:
++1 means outside the active window (next event is BEG),
+-1 means inside (next event is END), 0 means at a boundary."
   (let* ((time (or now (current-time)))
          (hours (string-to-number (format-time-string "%H" time)))
          (minutes (+ (* 60 hours)
@@ -1091,7 +1093,8 @@ If `trx-geoip-function' has changed, reset `trx-geoip-table'."
 
 (defun trx-ratio->256 (ratio)
   "Return a grey font-locked single-space string according to RATIO.
-Uses color names for the 256 color palette."
+Uses color names for the xterm 256-color palette.
+Indices 232-255 are a 24-step greyscale ramp; 231 is white."
   (let ((n (if (= 1 ratio) 231 (+ 236 (* 19 ratio)))))
     (propertize " " 'font-lock-face `(:background ,(format "color-%d" n)))))
 
@@ -2035,6 +2038,9 @@ trx rates."
       (6 (if (> up 0) (propertize state 'font-lock-face 'success) idle))
       (_ state))))
 
+(defconst trx-pieces-display-width 72
+  "Number of columns used for piece visualization display.")
+
 (defun trx-format-pieces (pieces count)
   "Format into a string the bitfield PIECES holding COUNT boolean flags."
   (let* ((bytes (base64-decode-string pieces))
@@ -2046,13 +2052,15 @@ trx rates."
                     (push (substring s 0 middle) res)
                     (setq s (substring s middle last)))
                   (nreverse res))))
-      (string-join (string-partition (substring bits 0 count) 72) "\n"))))
+      (string-join (string-partition (substring bits 0 count)
+                                     trx-pieces-display-width)
+                   "\n"))))
 
 (defun trx-format-pieces-brief (pieces count)
   "Format pieces into a one-line greyscale representation.
 PIECES and COUNT are the same as in `trx-format-pieces'."
   (let* ((bytes (base64-decode-string pieces))
-         (slices (trx-slice bytes 72))
+         (slices (trx-slice bytes trx-pieces-display-width))
          (ratios
           (cl-loop for bv in slices with div = nil
                    do (cl-decf count (setq div (min count (* 8 (length bv)))))
