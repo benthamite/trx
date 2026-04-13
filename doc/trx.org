@@ -13,3 +13,5 @@ Bug fixes: =trx-files-file-at-point= now correctly signals an error for non-exis
 Structural: =trx-current-torrent= and =trx-current-torrent-from= centralize access to the current torrent alist.  =trx-set-torrent-download= and =trx-set-torrent-upload= share a common =trx--set-torrent-speed-limit= helper.
 
 Clarity: =trx-format-minutes= uses direct arithmetic instead of a timezone-dependent epoch hack.  =trx-slice= parameter renamed to match its docstring.  =trx-pieces-display-width= replaces a magic 72.  =trx-turtle-when= and =trx-ratio->256= docstrings explain the underlying logic.
+
+Version 0.1.0 is the first release under the =trx= name (forked from =transmission=).
