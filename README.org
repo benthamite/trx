@@ -119,7 +119,7 @@ The user option ~trx-refresh-interval~ sets the period in seconds between automa
 #+vindex: trx-add-history-variable
 The user option ~trx-torrent-functions~ is a list of functions used to guess a torrent source when calling ~trx-add~ interactively ([[#h:adding-torrents][Adding torrents]]).  Each function takes no arguments and returns a string (a filename, URL, magnet link, or info hash) or ~nil~.  The results are offered as defaults in the prompt.  The built-in options are:
 
-- ~trx-ffap~: returns a file name, URL, or info hash at point, using text properties, ~file-name-at-point-functions~, ~url-get-url-at-point~, and ~thing-at-point~.
+- ~trx-ffap~: returns a file name, URL, or info hash at point, using text properties, ~file-name-at-point-functions~, ~thing-at-point-url-at-point~, and ~thing-at-point~.
 - ~trx-ffap-selection~: applies ~trx-ffap~ to the current graphical selection.
 - ~trx-ffap-last-killed~: applies ~trx-ffap~ to the most recent ~kill-ring~ entry.
 
@@ -537,7 +537,7 @@ The command ~trx-kill-torrent-buffers~ kills all per-torrent detail buffers (fil
 #+findex: trx-ffap
 #+findex: trx-ffap-selection
 #+findex: trx-ffap-last-killed
-The function ~trx-ffap~ returns a file name, URL, or info hash at point.  It checks, in order: the =shr-url= text property (for links in =shr= buffers), the =:nt-link= text property, ~file-name-at-point-functions~, ~url-get-url-at-point~, and finally whether the word at point is a 40-character hexadecimal info hash.  It returns ~nil~ if nothing is found.
+The function ~trx-ffap~ returns a file name, URL, or info hash at point.  It checks, in order: the =shr-url= text property (for links in =shr= buffers), the =:nt-link= text property, ~file-name-at-point-functions~, ~thing-at-point-url-at-point~, and finally whether the word at point is a 40-character hexadecimal info hash.  It returns ~nil~ if nothing is found.
 
 The function ~trx-ffap-selection~ applies ~trx-ffap~ to the current graphical selection (clipboard).
 

@@ -13,7 +13,7 @@ test:
 compile:
 	$(EMACS) -Q --batch \
 	  -L . \
-	  --eval '(setq byte-compile-error-on-warn nil)' \
+	  --eval '(setq byte-compile-error-on-warn t)' \
 	  -f batch-byte-compile trx.el trx-jackett.el
 
 clean:

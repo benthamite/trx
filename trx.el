@@ -63,6 +63,7 @@
 (require 'json)
 (require 'mailcap)
 (require 'tabulated-list)
+(require 'thingatpt)
 (require 'url-util)
 
 (eval-when-compile
@@ -959,7 +960,7 @@ Uses cyclic ordering of (now, BEG, END) on the 24-hour clock:
       (get-text-property (point) :nt-link)
       (let ((fn (run-hook-with-args-until-success 'file-name-at-point-functions)))
         (unless (trx-directory-name-p fn) fn))
-      (url-get-url-at-point)
+      (thing-at-point-url-at-point)
       (trx-btih-p (thing-at-point 'word))))
 
 (defun trx-ffap-string (string)
