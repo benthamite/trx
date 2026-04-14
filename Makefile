@@ -1,38 +1,20 @@
-VERSION = $(shell git describe --tags)
+EMACS ?= emacs
 
-SRC = transmission.el
-DISTFILES = Makefile $(SRC) LICENSE NEWS README.org
-
-PREFIX = /usr/local
-datarootdir := $(PREFIX)/share
-emacsdir := $(datarootdir)/emacs/site-lisp
-
-EMACS = emacs
-# EMACSFLAGS = -f package-initialize
-
-all: $(SRC:.el=.elc)
-
-clean:
-	$(RM) $(SRC:.el=.elc)
-
-dist: clean
-	mkdir transmission-$(VERSION)
-	cp -r $(DISTFILES) transmission-$(VERSION)
-	tar czf transmission-$(VERSION).tar.gz transmission-$(VERSION)
-	rm -rf transmission-$(VERSION)
-
-install: $(SRC:=.gz)
-	install -d $(DESTDIR)$(emacsdir)
-	install -m644 $(SRC:=.gz) $(SRC:.el=.elc) -t $(DESTDIR)$(emacsdir)
-
-.el.elc:
-	$(EMACS) -batch $(EMACSFLAGS) -f batch-byte-compile $<
-
-%.gz: %
-	gzip -k $<
+.PHONY: test compile clean
 
 test:
-	$(EMACS) -batch $(EMACSFLAGS) -l ert -l trx.el -l trx-jackett.el \
-	  -l trx-test.el -f ert-run-tests-batch-and-exit
+	$(EMACS) -Q --batch \
+	  -L . \
+	  -l trx.el \
+	  -l trx-jackett.el \
+	  -l trx-test.el \
+	  -f ert-run-tests-batch-and-exit
 
-.PHONY: all clean dist install test
+compile:
+	$(EMACS) -Q --batch \
+	  -L . \
+	  --eval '(setq byte-compile-error-on-warn nil)' \
+	  -f batch-byte-compile trx.el trx-jackett.el
+
+clean:
+	rm -f *.elc
