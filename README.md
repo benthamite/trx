@@ -21,24 +21,25 @@ All views support marking items for batch operations and optional automatic refr
 
 `trx` requires Emacs 24.4 or later.
 
-### package-vc (Emacs 30+)
+### package-vc (built-in since Emacs 30)
 
 ```emacs-lisp
-(package-vc-install "https://github.com/benthamite/trx")
+(use-package trx
+  :vc (:url "https://github.com/benthamite/trx"))
 ```
 
 ### Elpaca
 
 ```emacs-lisp
 (use-package trx
-  :ensure (trx :host github :repo "benthamite/trx"))
+  :ensure (:host github :repo "benthamite/trx"))
 ```
 
 ### straight.el
 
 ```emacs-lisp
-(straight-use-package
- '(trx :type git :host github :repo "benthamite/trx"))
+(use-package trx
+  :straight (:host github :repo "benthamite/trx"))
 ```
 
 ## Quick start
