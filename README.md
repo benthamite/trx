@@ -57,7 +57,7 @@ Then run `M-x trx` to open the torrent list, or `M-x trx-add` to add a torrent b
 
 ## Documentation
 
-For a comprehensive description of all user options, commands, and functions, see the [manual](README.org).
+For a comprehensive description of all user options, commands, and functions, see the [manual](https://stafforini.com/notes/trx/).
 
 ## License
 
