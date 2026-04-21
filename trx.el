@@ -1133,6 +1133,18 @@ FACE is applied as both `face' and `font-lock-face'."
                                 'trx-fade (1+ i) result))))))
     result))
 
+(defun trx--display-width (string)
+  "Return the display width of STRING in character cells.
+Falls back to `string-width' on non-graphical frames.  On graphical
+frames, uses pixel width so glyphs that render wider than their
+declared `string-width' (e.g. U+221E in some fonts) are padded
+correctly."
+  (if (display-graphic-p)
+      (let ((char-w (frame-char-width)))
+        (max (string-width string)
+             (/ (+ (string-pixel-width string) (1- char-w)) char-w)))
+    (string-width string)))
+
 (defun trx--blend-color (fg bg ratio)
   "Blend FG toward BG by RATIO (0.0 = pure FG, 1.0 = pure BG)."
   (let ((fv (color-values fg))
@@ -2448,7 +2460,7 @@ a vector of column descriptors."
              (right-align (plist-get props :right-align))
              (pad-right (or (plist-get props :pad-right) 1))
              (label (aref cols n))
-             (label-width (string-width label)))
+             (label-width (trx--display-width label)))
         (let ((face (or (get-text-property 0 'font-lock-face label)
                        (get-text-property 0 'face label))))
           (cond
