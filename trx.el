@@ -200,7 +200,7 @@ See `file-size-human-readable'."
                  (const :tag "IEC" iec))
   :link '(function-link file-size-human-readable))
 
-(defcustom trx-refresh-modes '()
+(defcustom trx-refresh-modes '(trx-mode trx-files-mode trx-info-mode trx-peers-mode)
   "List of major modes in which to refresh the buffer automatically."
   :type 'hook
   :options '(trx-mode
