@@ -1476,14 +1476,17 @@ When called with a prefix, prompt for DIRECTORY."
 
 (defun trx-reclassify (ids directory)
   "Move torrent at point, in region, or marked to a categorized DIRECTORY.
-DIRECTORY is chosen interactively from `trx-category-directories'."
+DIRECTORY is chosen from `trx-category-directories' via completion;
+when that option is empty, fall back to `read-directory-name'."
   (trx-interactive
-   (let* ((entries (trx--reclassify-entries))
-          (annotation (trx--reclassify-annotation entries))
-          (completion-extra-properties (list :annotation-function annotation))
-          (choice (completing-read "Reclassify to: "
-                                   (mapcar #'car entries) nil t)))
-     (list ids (cdr (assoc choice entries)))))
+   (let ((entries (trx--reclassify-entries)))
+     (list ids
+           (if entries
+               (let* ((table (trx--reclassify-completion-table entries))
+                      (choice (completing-read "Reclassify to: "
+                                               table nil t)))
+                 (cdr (assoc choice entries)))
+             (read-directory-name "Move to directory: ")))))
   (when (and ids directory)
     (let ((dir (expand-file-name directory)))
       (trx-request-async
@@ -1494,19 +1497,26 @@ DIRECTORY is chosen interactively from `trx-category-directories'."
        `(:ids ,ids :move t :location ,dir)))))
 
 (defun trx--reclassify-entries ()
-  "Return `trx-category-directories' as a string-keyed alist."
-  (or (cl-loop for (k . v) in trx-category-directories
-               if (stringp k) collect (cons k v)
-               else if (eq k t) collect (cons "(default)" v))
-      (user-error "`trx-category-directories' is empty")))
+  "Return `trx-category-directories' as a string-keyed alist, or nil if empty."
+  (cl-loop for (k . v) in trx-category-directories
+           if (stringp k) collect (cons k v)
+           else if (eq k t) collect (cons "(default)" v)))
 
-(defun trx--reclassify-annotation (entries)
-  "Return a `:annotation-function' showing each entry's directory.
-ENTRIES is a string-keyed alist as returned by `trx--reclassify-entries'."
-  (lambda (key)
-    (when-let ((dir (cdr (assoc key entries))))
-      (concat "  " (propertize (abbreviate-file-name dir)
-                               'face 'completions-annotations)))))
+(defun trx--reclassify-completion-table (entries)
+  "Return a completion table for ENTRIES that annotates with each directory.
+The table reports its `category' as `trx-category-directory' so that
+completion frameworks do not auto-classify the candidates as filenames."
+  (let ((annotate
+         (lambda (key)
+           (when-let ((dir (cdr (assoc key entries))))
+             (concat "  " (propertize (abbreviate-file-name dir)
+                                      'face 'completions-annotations))))))
+    (lambda (str pred action)
+      (if (eq action 'metadata)
+          `(metadata
+            (category . trx-category-directory)
+            (annotation-function . ,annotate))
+        (complete-with-action action entries str pred)))))
 
 (defun trx-category-directory-for (category)
   "Return the configured directory matching CATEGORY, or nil.
