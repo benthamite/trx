@@ -372,7 +372,7 @@ TITLE is used for status messages."
          ("Tracker" 14 t)
          ("Cat" 10 t)
          ("Title" 0 t)])
-  (setq tabulated-list-sort-key '("S" . t))
+  (setq tabulated-list-sort-key '("S"))
   (setq tabulated-list-printer #'trx-print-torrent)
   (tabulated-list-init-header)
   (setq-local revert-buffer-function #'trx-jackett-results-revert))
