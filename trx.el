@@ -254,6 +254,25 @@ Each function should accept no arguments, and return a string or nil."
              trx-ffap-selection
              trx-ffap-last-killed))
 
+(defcustom trx-incomplete-dir nil
+  "Directory for incomplete downloads, or nil to leave the daemon alone.
+When set to a directory, partially downloaded torrents are written there
+and moved to their final location once complete.  Setting this option
+via Customize or `setopt' pushes the new value to the running
+Transmission daemon, and `trx-refresh-session-cache' re-pushes it
+whenever the daemon's stored value drifts from this option.
+
+When nil (the default), trx does not manage the daemon's incomplete-dir
+setting; configure it directly on the daemon if desired.
+
+This is a global Transmission session setting, not per-torrent."
+  :type '(choice (const :tag "Don't manage" nil)
+                 (directory :tag "Directory"))
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (when (and value (fboundp 'trx--apply-incomplete-dir))
+           (trx--apply-incomplete-dir value))))
+
 (defcustom trx-files-command-functions '(mailcap-file-default-commands)
   "List of functions to use for guessing default applications.
 Each function should accept one argument, a list of file names,
@@ -818,14 +837,33 @@ disable the limit."
 (defun trx-refresh-session-cache ()
   "Update `trx-session-cache' from the Transmission daemon."
   (trx-request-async
-   (lambda (response) (setq trx-session-cache response))
+   (lambda (response)
+     (setq trx-session-cache response)
+     (trx--maybe-sync-incomplete-dir response))
    "session-get"
    '(:fields ["speed-limit-up" "speed-limit-down"
               "speed-limit-up-enabled" "speed-limit-down-enabled"
               "seedRatioLimit" "seedRatioLimited"
               "alt-speed-up" "alt-speed-down"
               "alt-speed-time-day" "alt-speed-time-enabled"
-              "alt-speed-time-begin" "alt-speed-time-end"])))
+              "alt-speed-time-begin" "alt-speed-time-end"
+              "incomplete-dir" "incomplete-dir-enabled"])))
+
+(defun trx--maybe-sync-incomplete-dir (response)
+  "Push `trx-incomplete-dir' if the daemon's RESPONSE state differs."
+  (when trx-incomplete-dir
+    (let-alist response
+      (let ((want (expand-file-name trx-incomplete-dir)))
+        (unless (and (eq .incomplete-dir-enabled t)
+                     (equal .incomplete-dir want))
+          (trx--apply-incomplete-dir trx-incomplete-dir))))))
+
+(defun trx--apply-incomplete-dir (dir)
+  "Push DIR as the daemon's incomplete-dir setting via session-set."
+  (when dir
+    (trx-request-async nil "session-set"
+                       `(:incomplete-dir ,(expand-file-name dir)
+                         :incomplete-dir-enabled t))))
 
 (defun trx-prompt-speed-limit (upload)
   "Make a prompt to set transfer speed limit.

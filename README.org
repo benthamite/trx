@@ -162,6 +162,16 @@ The user option ~trx-geoip-use-cache~ controls whether IP-to-location results ar
 #+vindex: trx-turtle-lighter
 The user option ~trx-turtle-lighter~ controls the mode-line lighter text for ~trx-turtle-mode~ ([[#h:turtle-mode][Turtle mode]]).  The default is ~" turtle"~.  Alternative choices include ~" ,=,e"~ (ASCII art) and ~" \U0001f422"~ (turtle emoji).  When turtle mode is active, the lighter is appended with the current down/up speed limits.
 
+** Download paths
+:PROPERTIES:
+:CUSTOM_ID: h:download-paths
+:END:
+
+#+vindex: trx-incomplete-dir
+The user option ~trx-incomplete-dir~ specifies the directory for incomplete downloads.  When set to a directory, partially downloaded torrents are written there and moved to their final location once complete.  When nil (the default), trx leaves the daemon's existing setting alone.  This is a global Transmission session setting, not per-torrent.
+
+Setting this option via Customize or ~setopt~ pushes the new value to the running daemon, and ~trx-refresh-session-cache~ re-pushes it whenever the daemon's stored value drifts from the option.
+
 * Commands
 :PROPERTIES:
 :CUSTOM_ID: h:commands

@@ -13,6 +13,7 @@
 
 @finalout
 @titlepage
+@title trx: Interface to a Transmission session
 @author Pablo Stafforini (@email{pablo@@stafforini.com})
 @end titlepage
 
@@ -22,7 +23,7 @@
 @node Top
 @top trx: Interface to a Transmission session
 
-This manual describes the features and customization options for the Emacs Lisp file @samp{trx.el}. @*
+This manual describes the features and customization options for the Emacs Lisp file @samp{trx.el}.
 
 @end ifnottex
 
@@ -48,6 +49,7 @@ User options
 * Tracker settings::
 * External commands and GeoIP::
 * Turtle mode appearance::
+* Download paths::
 
 Commands
 
@@ -110,30 +112,30 @@ Indices
 @node Overview
 @chapter Overview
 
-@samp{trx.el} provides a full-featured Emacs interface to the @uref{https://transmissionbt.com/, Transmission} BitTorrent client.  It communicates with a Transmission daemon over its JSON RPC protocol, allowing you to manage torrents entirely from within Emacs. @*
+@samp{trx.el} provides a full-featured Emacs interface to the @uref{https://transmissionbt.com/, Transmission} BitTorrent client.  It communicates with a Transmission daemon over its JSON RPC protocol, allowing you to manage torrents entirely from within Emacs.
 
-The package is a renamed and improved fork of Mark Oteiza's @samp{transmission.el}.  It retains the same architecture---a set of @samp{tabulated-list-mode} buffers for different views---while adding several enhancements, including filtering, per-torrent detail buffers, labels, file renaming, and more robust connection handling. @*
+The package is a renamed and improved fork of Mark Oteiza's @samp{transmission.el}.  It retains the same architecture---a set of @samp{tabulated-list-mode} buffers for different views---while adding several enhancements, including filtering, per-torrent detail buffers, labels, file renaming, and more robust connection handling.
 
-The interface is organized around four contexts, each with its own major mode: @*
+The interface is organized around four contexts, each with its own major mode:
 
 @itemize
 @item
-@strong{Torrent list} (@code{trx-mode}): the main entry point.  Shows all torrents with their status, progress, speeds, ratio, and addition date.  From here you can add, start, stop, remove, verify, and label torrents, set speed and ratio limits, and navigate to per-torrent detail views. @*
+@strong{Torrent list} (@code{trx-mode}): the main entry point.  Shows all torrents with their status, progress, speeds, ratio, and addition date.  From here you can add, start, stop, remove, verify, and label torrents, set speed and ratio limits, and navigate to per-torrent detail views.
 @item
-@strong{File list} (@code{trx-files-mode}): shows the files within a single torrent.  You can toggle files for download, set per-file priorities, visit files on disk, copy them, rename them, or open them with external applications. @*
+@strong{File list} (@code{trx-files-mode}): shows the files within a single torrent.  You can toggle files for download, set per-file priorities, visit files on disk, copy them, rename them, or open them with external applications.
 @item
-@strong{Torrent info} (@code{trx-info-mode}): a read-only buffer displaying detailed metadata for a single torrent---dates, tracker statistics, peer origins, piece data, speed limits, and more. @*
+@strong{Torrent info} (@code{trx-info-mode}): a read-only buffer displaying detailed metadata for a single torrent---dates, tracker statistics, peer origins, piece data, speed limits, and more.
 @item
-@strong{Peer list} (@code{trx-peers-mode}): shows connected peers with their addresses, flags, progress, transfer rates, client names, and optionally geolocated country names. @*
+@strong{Peer list} (@code{trx-peers-mode}): shows connected peers with their addresses, flags, progress, transfer rates, client names, and optionally geolocated country names.
 @end itemize
 
-All four contexts support automatic periodic refresh via a configurable timer, and all torrent-mutating commands operate on the torrent at point, on a region of torrents, or on explicitly marked items. @*
+All four contexts support automatic periodic refresh via a configurable timer, and all torrent-mutating commands operate on the torrent at point, on a region of torrents, or on explicitly marked items.
 
-The two primary entry points are @code{trx} (opens the torrent list) and @code{trx-add} (adds a torrent by filename, URL, magnet link, or info hash).  A global minor mode, @code{trx-turtle-mode}, toggles Transmission's alternative speed limits (``turtle mode'') and shows the active limits on the mode line. @*
+The two primary entry points are @code{trx} (opens the torrent list) and @code{trx-add} (adds a torrent by filename, URL, magnet link, or info hash).  A global minor mode, @code{trx-turtle-mode}, toggles Transmission's alternative speed limits (``turtle mode'') and shows the active limits on the mode line.
 
-The package requires Emacs 24.4 or later and the @samp{let-alist} library.  It also uses @samp{auth-source} for optional RPC credential lookup. @*
+The package requires Emacs 24.4 or later and the @samp{let-alist} library.  It also uses @samp{auth-source} for optional RPC credential lookup.
 
-The development repository is on @uref{https://github.com/benthamite/trx, GitHub}. @*
+The development repository is on @uref{https://github.com/benthamite/trx, GitHub}.
 
 @node User options
 @chapter User options
@@ -147,6 +149,7 @@ The development repository is on @uref{https://github.com/benthamite/trx, GitHub
 * Tracker settings::
 * External commands and GeoIP::
 * Turtle mode appearance::
+* Download paths::
 @end menu
 
 @node Connection settings
@@ -158,19 +161,19 @@ The development repository is on @uref{https://github.com/benthamite/trx, GitHub
 @vindex trx-use-tls
 @vindex trx-request-timeout
 @vindex trx-rpc-auth
-The following options control how @samp{trx.el} connects to the Transmission daemon. @*
+The following options control how @samp{trx.el} connects to the Transmission daemon.
 
-The user option @code{trx-host} specifies the host name, IP address, or Unix socket path of the Transmission session.  Its default value is @code{"localhost"}.  If you set this to an absolute file path (e.g. @samp{"/var/run/transmission/socket"}), the connection uses a local Unix socket instead of TCP@. @*
+The user option @code{trx-host} specifies the host name, IP address, or Unix socket path of the Transmission session.  Its default value is @code{"localhost"}.  If you set this to an absolute file path (e.g. @samp{"/var/run/transmission/socket"}), the connection uses a local Unix socket instead of TCP@.
 
-The user option @code{trx-service} specifies the port number or service name.  It accepts an integer, a string, or the default value @code{9091}.  When @code{trx-host} is a socket path, this option is ignored. @*
+The user option @code{trx-service} specifies the port number or service name.  It accepts an integer, a string, or the default value @code{9091}.  When @code{trx-host} is a socket path, this option is ignored.
 
-The user option @code{trx-rpc-path} specifies the HTTP path to the RPC endpoint.  The default is @code{"/transmission/rpc"}.  You would change this if the daemon is behind a reverse proxy that remaps the path. @*
+The user option @code{trx-rpc-path} specifies the HTTP path to the RPC endpoint.  The default is @code{"/transmission/rpc"}.  You would change this if the daemon is behind a reverse proxy that remaps the path.
 
-The user option @code{trx-use-tls} controls whether the connection uses TLS@.  Its default value is @code{nil}.  When set to non-nil, Emacs must have been compiled with GnuTLS support.  TLS is not used for Unix socket connections. @*
+The user option @code{trx-use-tls} controls whether the connection uses TLS@.  Its default value is @code{nil}.  When set to non-nil, Emacs must have been compiled with GnuTLS support.  TLS is not used for Unix socket connections.
 
-The user option @code{trx-request-timeout} sets the timeout in seconds for synchronous RPC requests.  The default is @code{30}.  If the daemon is slow to respond (e.g. over a high-latency network), increase this value. @*
+The user option @code{trx-request-timeout} sets the timeout in seconds for synchronous RPC requests.  The default is @code{30}.  If the daemon is slow to respond (e.g. over a high-latency network), increase this value.
 
-The user option @code{trx-rpc-auth} holds authentication credentials for the RPC interface.  Its value is either @code{nil} (no authentication, the default) or a plist with @samp{:username} and optionally @samp{:password} keys.  If no password is provided but a username is set, @samp{trx.el} searches @code{auth-sources} using the username, @code{trx-host}, and @code{trx-service} to find one. @*
+The user option @code{trx-rpc-auth} holds authentication credentials for the RPC interface.  Its value is either @code{nil} (no authentication, the default) or a plist with @samp{:username} and optionally @samp{:password} keys.  If no password is provided but a username is set, @samp{trx.el} searches @code{auth-sources} using the username, @code{trx-host}, and @code{trx-service} to find one.
 
 @node Display and formatting
 @section Display and formatting
@@ -179,72 +182,72 @@ The user option @code{trx-rpc-auth} holds authentication credentials for the RPC
 @vindex trx-digit-delimiter
 @vindex trx-time-format
 @vindex trx-time-zone
-The user option @code{trx-units} controls which unit system is used for displaying file sizes.  It accepts @code{nil} (the default, which uses the system default from @code{file-size-human-readable}), @code{si} for SI units (powers of 1000), or @code{iec} for IEC units (powers of 1024).  This also affects the column width of size columns in the torrent and file lists. @*
+The user option @code{trx-units} controls which unit system is used for displaying file sizes.  It accepts @code{nil} (the default, which uses the system default from @code{file-size-human-readable}), @code{si} for SI units (powers of 1000), or @code{iec} for IEC units (powers of 1024).  This also affects the column width of size columns in the torrent and file lists.
 
-The user option @code{trx-digit-delimiter} specifies the character used to group digits in large numbers.  The default is @code{","} (comma).  You can set it to @code{"."} (full stop), @code{nil} (no grouping), or any other string.  Grouping is applied via @code{calc-group-char}, so numbers below 10,000 are never grouped. @*
+The user option @code{trx-digit-delimiter} specifies the character used to group digits in large numbers.  The default is @code{","} (comma).  You can set it to @code{"."} (full stop), @code{nil} (no grouping), or any other string.  Grouping is applied via @code{calc-group-char}, so numbers below 10,000 are never grouped.
 
-The user option @code{trx-time-format} is a @code{format-time-string} format string used to display dates.  The default is @code{"%a %b %e %T %Y %z"}, producing output like @samp{Sat Apr 12 14:30:00 2026 -0300}. @*
+The user option @code{trx-time-format} is a @code{format-time-string} format string used to display dates.  The default is @code{"%a %b %e %T %Y %z"}, producing output like @samp{Sat Apr 12 14:30:00 2026 -0300}.
 
-The user option @code{trx-time-zone} controls the time zone for formatted dates.  Possible values are @code{nil} (local time, the default), @code{t} (UTC), @code{wall} (system wall clock), or a time zone identifier string. @*
+The user option @code{trx-time-zone} controls the time zone for formatted dates.  Possible values are @code{nil} (local time, the default), @code{t} (UTC), @code{wall} (system wall clock), or a time zone identifier string.
 
 @node Pieces display
 @section Pieces display
 
 @vindex trx-pieces-function
-The user option @code{trx-pieces-function} determines how incomplete torrent pieces are visualized in the info buffer (@ref{Viewing torrent info}).  It accepts a function that takes a base64-encoded bitfield string and a piece count, and returns a string.  The built-in choices are: @*
+The user option @code{trx-pieces-function} determines how incomplete torrent pieces are visualized in the info buffer (@ref{Viewing torrent info}).  It accepts a function that takes a base64-encoded bitfield string and a piece count, and returns a string.  The built-in choices are:
 
 @itemize
 @item
-@code{trx-format-pieces}: displays a full binary bitfield, wrapping at 72 characters per line. @*
+@code{trx-format-pieces}: displays a full binary bitfield, wrapping at 72 characters per line.
 @item
-@code{trx-format-pieces-brief}: displays a compact one-line greyscale bar, where each character represents a group of pieces.  On terminals with 256 or more colors, it uses background colors; on fewer, it uses Unicode block characters. @*
+@code{trx-format-pieces-brief}: displays a compact one-line greyscale bar, where each character represents a group of pieces.  On terminals with 256 or more colors, it uses background colors; on fewer, it uses Unicode block characters.
 @item
-@code{nil}: disables pieces display entirely. @*
+@code{nil}: disables pieces display entirely.
 @end itemize
 
-The default value is @code{#'trx-format-pieces}. @*
+The default value is @code{#'trx-format-pieces}.
 
 @node Refresh and timer
 @section Refresh and timer
 
 @vindex trx-refresh-modes
 @vindex trx-refresh-interval
-The user option @code{trx-refresh-modes} is a list of major modes in which buffers should automatically refresh.  When a buffer's major mode appears in this list, a timer periodically calls @code{revert-buffer}.  The available modes are @code{trx-mode}, @code{trx-files-mode}, @code{trx-info-mode}, and @code{trx-peers-mode}.  The default is an empty list, meaning no automatic refresh.  To enable live updates in the torrent list, for example: @*
+The user option @code{trx-refresh-modes} is a list of major modes in which buffers should automatically refresh.  When a buffer's major mode appears in this list, a timer periodically calls @code{revert-buffer}.  The available modes are @code{trx-mode}, @code{trx-files-mode}, @code{trx-info-mode}, and @code{trx-peers-mode}.  The default is an empty list, meaning no automatic refresh.  To enable live updates in the torrent list, for example:
 
 @lisp
 (setopt trx-refresh-modes '(trx-mode))
 @end lisp
 
-The user option @code{trx-refresh-interval} sets the period in seconds between automatic refreshes.  The default is @code{2}.  The value must be positive.  After five consecutive refresh failures, the timer disables itself and displays a warning. @*
+The user option @code{trx-refresh-interval} sets the period in seconds between automatic refreshes.  The default is @code{2}.  The value must be positive.  After five consecutive refresh failures, the timer disables itself and displays a warning.
 
 @node Torrent guessing
 @section Torrent guessing
 
 @vindex trx-torrent-functions
 @vindex trx-add-history-variable
-The user option @code{trx-torrent-functions} is a list of functions used to guess a torrent source when calling @code{trx-add} interactively (@ref{Adding torrents}).  Each function takes no arguments and returns a string (a filename, URL, magnet link, or info hash) or @code{nil}.  The results are offered as defaults in the prompt.  The built-in options are: @*
+The user option @code{trx-torrent-functions} is a list of functions used to guess a torrent source when calling @code{trx-add} interactively (@ref{Adding torrents}).  Each function takes no arguments and returns a string (a filename, URL, magnet link, or info hash) or @code{nil}.  The results are offered as defaults in the prompt.  The built-in options are:
 
 @itemize
 @item
-@code{trx-ffap}: returns a file name, URL, or info hash at point, using text properties, @code{file-name-at-point-functions}, @code{thing-at-point-url-at-point}, and @code{thing-at-point}. @*
+@code{trx-ffap}: returns a file name, URL, or info hash at point, using text properties, @code{file-name-at-point-functions}, @code{thing-at-point-url-at-point}, and @code{thing-at-point}.
 @item
-@code{trx-ffap-selection}: applies @code{trx-ffap} to the current graphical selection. @*
+@code{trx-ffap-selection}: applies @code{trx-ffap} to the current graphical selection.
 @item
-@code{trx-ffap-last-killed}: applies @code{trx-ffap} to the most recent @code{kill-ring} entry. @*
+@code{trx-ffap-last-killed}: applies @code{trx-ffap} to the most recent @code{kill-ring} entry.
 @end itemize
 
-All three are enabled by default. @*
+All three are enabled by default.
 
-The user option @code{trx-add-history-variable} specifies the history list variable used by @code{trx-add} prompts.  The default is @code{trx-add-history}.  Consider adding this variable to @code{savehist-additional-variables} so that your torrent addition history persists across sessions. @*
+The user option @code{trx-add-history-variable} specifies the history list variable used by @code{trx-add} prompts.  The default is @code{trx-add-history}.  Consider adding this variable to @code{savehist-additional-variables} so that your torrent addition history persists across sessions.
 
 @node Tracker settings
 @section Tracker settings
 
 @vindex trx-trackers
 @vindex trx-tracker-history-variable
-The user option @code{trx-trackers} is a list of tracker URLs offered for completion when adding or replacing trackers (@ref{Tracker management}).  It defaults to an empty list.  Populate it with your preferred trackers so they appear alongside the auto-collected announce URLs from your existing torrents. @*
+The user option @code{trx-trackers} is a list of tracker URLs offered for completion when adding or replacing trackers (@ref{Tracker management}).  It defaults to an empty list.  Populate it with your preferred trackers so they appear alongside the auto-collected announce URLs from your existing torrents.
 
-The user option @code{trx-tracker-history-variable} specifies the history list variable used by tracker commands.  The default is @code{trx-tracker-history}.  As with @code{trx-add-history-variable}, consider adding it to @code{savehist-additional-variables}. @*
+The user option @code{trx-tracker-history-variable} specifies the history list variable used by tracker commands.  The default is @code{trx-tracker-history}.  As with @code{trx-add-history-variable}, consider adding it to @code{savehist-additional-variables}.
 
 @node External commands and GeoIP
 @section External commands and GeoIP
@@ -252,17 +255,25 @@ The user option @code{trx-tracker-history-variable} specifies the history list v
 @vindex trx-files-command-functions
 @vindex trx-geoip-function
 @vindex trx-geoip-use-cache
-The user option @code{trx-files-command-functions} is a list of functions used to guess default applications for running on files (@ref{Running commands on files}).  Each function accepts a list of file names and returns a list of command strings or @code{nil}.  The default includes @code{mailcap-file-default-commands}, which uses the system's MIME type database. @*
+The user option @code{trx-files-command-functions} is a list of functions used to guess default applications for running on files (@ref{Running commands on files}).  Each function accepts a list of file names and returns a list of command strings or @code{nil}.  The default includes @code{mailcap-file-default-commands}, which uses the system's MIME type database.
 
-The user option @code{trx-geoip-function} specifies a function used to translate IP addresses into location names, shown in the ``Location'' column of the peer list (@ref{Viewing peers}).  The function should accept an IP address string and return a location name string or @code{nil}.  The built-in option @code{trx-geoiplookup} shells out to the @samp{geoiplookup} (or @samp{geoiplookup6} for IPv6) command-line tool.  The default is @code{nil}, meaning no geolocation. @*
+The user option @code{trx-geoip-function} specifies a function used to translate IP addresses into location names, shown in the ``Location'' column of the peer list (@ref{Viewing peers}).  The function should accept an IP address string and return a location name string or @code{nil}.  The built-in option @code{trx-geoiplookup} shells out to the @samp{geoiplookup} (or @samp{geoiplookup6} for IPv6) command-line tool.  The default is @code{nil}, meaning no geolocation.
 
-The user option @code{trx-geoip-use-cache} controls whether IP-to-location results are cached in memory.  When set to non-nil, results are stored in an internal hash table, avoiding repeated lookups.  This is useful when @code{trx-geoip-function} is slow or does not have its own caching.  The default is @code{nil}. @*
+The user option @code{trx-geoip-use-cache} controls whether IP-to-location results are cached in memory.  When set to non-nil, results are stored in an internal hash table, avoiding repeated lookups.  This is useful when @code{trx-geoip-function} is slow or does not have its own caching.  The default is @code{nil}.
 
 @node Turtle mode appearance
 @section Turtle mode appearance
 
 @vindex trx-turtle-lighter
-The user option @code{trx-turtle-lighter} controls the mode-line lighter text for @code{trx-turtle-mode} (@ref{Turtle mode}).  The default is @code{" turtle"}.  Alternative choices include @code{" ,=,e"} (ASCII art) and @code{" \U0001f422"} (turtle emoji).  When turtle mode is active, the lighter is appended with the current down/up speed limits. @*
+The user option @code{trx-turtle-lighter} controls the mode-line lighter text for @code{trx-turtle-mode} (@ref{Turtle mode}).  The default is @code{" turtle"}.  Alternative choices include @code{" ,=,e"} (ASCII art) and @code{" \U0001f422"} (turtle emoji).  When turtle mode is active, the lighter is appended with the current down/up speed limits.
+
+@node Download paths
+@section Download paths
+
+@vindex trx-incomplete-dir
+The user option @code{trx-incomplete-dir} specifies the directory for incomplete downloads.  When set to a directory, partially downloaded torrents are written there and moved to their final location once complete.  When nil (the default), trx leaves the daemon's existing setting alone.  This is a global Transmission session setting, not per-torrent.
+
+Setting this option via Customize or @code{setopt} pushes the new value to the running daemon, and @code{trx-refresh-session-cache} re-pushes it whenever the daemon's stored value drifts from the option.
 
 @node Commands
 @chapter Commands
@@ -295,84 +306,84 @@ The user option @code{trx-turtle-lighter} controls the mode-line lighter text fo
 @section Opening the torrent list
 
 @findex trx
-The command @code{trx} is the main entry point.  It opens a @samp{*trx*} buffer in @code{trx-mode} showing all torrents in the connected Transmission session.  If the buffer already exists, it is reused.  On first invocation, it establishes a network connection to the daemon, initializes turtle mode polling, and caches session data. @*
+The command @code{trx} is the main entry point.  It opens a @samp{*trx*} buffer in @code{trx-mode} showing all torrents in the connected Transmission session.  If the buffer already exists, it is reused.  On first invocation, it establishes a network connection to the daemon, initializes turtle mode polling, and caches session data.
 
-Invoke it with @samp{M-x trx}. @*
+Invoke it with @samp{M-x trx}.
 
 @node Adding torrents
 @section Adding torrents
 
 @findex trx-add
-The command @code{trx-add} adds a torrent to the session.  It accepts a filename, URL, magnet link, or bare 40-character info hash.  When called interactively, it uses @code{trx-torrent-functions} to guess a default from context---the file at point, the graphical selection, or the most recent kill ring entry (@ref{Torrent guessing}). @*
+The command @code{trx-add} adds a torrent to the session.  It accepts a filename, URL, magnet link, or bare 40-character info hash.  When called interactively, it uses @code{trx-torrent-functions} to guess a default from context---the file at point, the graphical selection, or the most recent kill ring entry (@ref{Torrent guessing}).
 
-If the argument is a readable file, its contents are base64-encoded and sent as metadata.  Otherwise, the string is sent as a filename/URL@.  A bare info hash is automatically converted to a @samp{magnet:} URI@. @*
+If the argument is a readable file, its contents are base64-encoded and sent as metadata.  Otherwise, the string is sent as a filename/URL@.  A bare info hash is automatically converted to a @samp{magnet:} URI@.
 
-When the guessed default looks like a URI or magnet link, @code{trx-add} uses @code{read-string} instead of @code{read-file-name} to avoid triggering TRAMP on hostnames embedded in the link. @*
+When the guessed default looks like a URI or magnet link, @code{trx-add} uses @code{read-string} instead of @code{read-file-name} to avoid triggering TRAMP on hostnames embedded in the link.
 
-With a prefix argument (@samp{C-u}), the command also prompts for a target download directory.  Without the prefix, the daemon's default download directory is used. @*
+With a prefix argument (@samp{C-u}), the command also prompts for a target download directory.  Without the prefix, the daemon's default download directory is used.
 
 @node Starting stopping and toggling
 @section Starting, stopping, and toggling
 
 @findex trx-toggle
-The command @code{trx-toggle} toggles selected torrents between started and stopped states.  It queries the current status of the first selected torrent and sends the opposite action.  This makes it a convenient single key (@samp{s} in the torrent list) for pausing and resuming. @*
+The command @code{trx-toggle} toggles selected torrents between started and stopped states.  It queries the current status of the first selected torrent and sends the opposite action.  This makes it a convenient single key (@samp{s} in the torrent list) for pausing and resuming.
 
 @node Removing and deleting torrents
 @section Removing and deleting torrents
 
 @findex trx-remove
 @findex trx-delete
-The command @code{trx-remove} prompts to remove selected torrents from the session.  With a prefix argument, it also deletes (unlinks) the downloaded data from disk.  The prompt clearly indicates whether data deletion is requested. @*
+The command @code{trx-remove} prompts to remove selected torrents from the session.  With a prefix argument, it also deletes (unlinks) the downloaded data from disk.  The prompt clearly indicates whether data deletion is requested.
 
-The command @code{trx-delete} is a shortcut that always deletes both the torrent and its data.  It prompts for confirmation with @code{yes-or-no-p} given the destructive nature of the operation. @*
+The command @code{trx-delete} is a shortcut that always deletes both the torrent and its data.  It prompts for confirmation with @code{yes-or-no-p} given the destructive nature of the operation.
 
-Both commands clear any active marks and deactivate the region after execution. @*
+Both commands clear any active marks and deactivate the region after execution.
 
 @node Verifying torrents
 @section Verifying torrents
 
 @findex trx-verify
-The command @code{trx-verify} asks Transmission to verify the integrity of selected torrents by re-checking their data against the torrent's piece hashes.  It prompts for confirmation before proceeding. @*
+The command @code{trx-verify} asks Transmission to verify the integrity of selected torrents by re-checking their data against the torrent's piece hashes.  It prompts for confirmation before proceeding.
 
 @node Moving torrents
 @section Moving torrents
 
 @findex trx-move
-The command @code{trx-move} relocates selected torrents to a new directory.  It prompts for the target directory and asks for confirmation before sending the move request to the daemon.  The move is performed server-side, so the daemon must have write access to the target location. @*
+The command @code{trx-move} relocates selected torrents to a new directory.  It prompts for the target directory and asks for confirmation before sending the move request to the daemon.  The move is performed server-side, so the daemon must have write access to the target location.
 
 @node Reannouncing
 @section Reannouncing
 
 @findex trx-reannounce
-The command @code{trx-reannounce} forces a tracker re-announce for selected torrents.  This is useful when you want to immediately update peer information rather than waiting for the next scheduled announce cycle. @*
+The command @code{trx-reannounce} forces a tracker re-announce for selected torrents.  This is useful when you want to immediately update peer information rather than waiting for the next scheduled announce cycle.
 
 @node Setting labels
 @section Setting labels
 
 @findex trx-label
-The command @code{trx-label} sets labels on selected torrents.  It prompts for label strings, offering completion from all labels currently in use across the session.  Labels are displayed alongside the torrent name in the torrent list, styled with @code{font-lock-constant-face}. @*
+The command @code{trx-label} sets labels on selected torrents.  It prompts for label strings, offering completion from all labels currently in use across the session.  Labels are displayed alongside the torrent name in the torrent list, styled with @code{font-lock-constant-face}.
 
-You can enter multiple labels by typing each one and pressing @samp{RET}; an empty input finishes the list. @*
+You can enter multiple labels by typing each one and pressing @samp{RET}; an empty input finishes the list.
 
 @node Filtering the torrent list
 @section Filtering the torrent list
 
 @findex trx-filter
 @findex trx-filter-clear
-The command @code{trx-filter} restricts the torrent list to entries matching a filter string.  Three filter types are supported: @*
+The command @code{trx-filter} restricts the torrent list to entries matching a filter string.  Three filter types are supported:
 
 @itemize
 @item
-@strong{Plain text}: matches torrent names case-insensitively.  For example, @samp{ubuntu} shows only torrents whose names contain ``ubuntu''. @*
+@strong{Plain text}: matches torrent names case-insensitively.  For example, @samp{ubuntu} shows only torrents whose names contain ``ubuntu''.
 @item
-@strong{Status prefix}: @samp{status:X} matches torrents whose status contains @samp{X}.  Valid statuses are @samp{stopped}, @samp{verifywait}, @samp{verifying}, @samp{downwait}, @samp{downloading}, @samp{seedwait}, and @samp{seeding}. @*
+@strong{Status prefix}: @samp{status:X} matches torrents whose status contains @samp{X}.  Valid statuses are @samp{stopped}, @samp{verifywait}, @samp{verifying}, @samp{downwait}, @samp{downloading}, @samp{seedwait}, and @samp{seeding}.
 @item
-@strong{Label prefix}: @samp{label:X} matches torrents that have a label containing @samp{X}. @*
+@strong{Label prefix}: @samp{label:X} matches torrents that have a label containing @samp{X}.
 @item
-@strong{Negation}: prefixing any filter with @samp{!} inverts the match.  For example, @samp{!status:stopped} shows all torrents that are not stopped. @*
+@strong{Negation}: prefixing any filter with @samp{!} inverts the match.  For example, @samp{!status:stopped} shows all torrents that are not stopped.
 @end itemize
 
-The filter persists across refreshes until cleared.  The command @code{trx-filter-clear} removes the active filter and shows all torrents again.  In the torrent list, @samp{/ is bound to ~trx-filter~ and =\} to @code{trx-filter-clear}. @*
+The filter persists across refreshes until cleared.  The command @code{trx-filter-clear} removes the active filter and shows all torrents again.  In the torrent list, @samp{/ is bound to ~trx-filter~ and =\} to @code{trx-filter-clear}.
 
 @node Speed and ratio limits
 @section Speed and ratio limits
@@ -388,11 +399,11 @@ The filter persists across refreshes until cleared.  The command @code{trx-filte
 @findex trx-set-download
 @findex trx-set-upload
 @findex trx-set-ratio
-The command @code{trx-set-download} sets the global download speed limit in kB/s.  The prompt shows the current limit and whether it is enabled.  A value of zero or less disables the limit. @*
+The command @code{trx-set-download} sets the global download speed limit in kB/s.  The prompt shows the current limit and whether it is enabled.  A value of zero or less disables the limit.
 
-The command @code{trx-set-upload} does the same for the upload speed limit. @*
+The command @code{trx-set-upload} does the same for the upload speed limit.
 
-The command @code{trx-set-ratio} sets the global seed ratio limit.  A negative value disables the limit. @*
+The command @code{trx-set-ratio} sets the global seed ratio limit.  A negative value disables the limit.
 
 @node Per-torrent limits
 @subsection Per-torrent limits
@@ -401,19 +412,19 @@ The command @code{trx-set-ratio} sets the global seed ratio limit.  A negative v
 @findex trx-set-torrent-upload
 @findex trx-set-torrent-ratio
 @findex trx-toggle-limits
-The command @code{trx-set-torrent-download} sets the download speed limit for selected torrents.  When a single torrent is selected, the prompt shows its current limit and whether it is enabled.  A value of zero or less disables the per-torrent limit. @*
+The command @code{trx-set-torrent-download} sets the download speed limit for selected torrents.  When a single torrent is selected, the prompt shows its current limit and whether it is enabled.  A value of zero or less disables the per-torrent limit.
 
-The command @code{trx-set-torrent-upload} does the same for the upload speed limit. @*
+The command @code{trx-set-torrent-upload} does the same for the upload speed limit.
 
-The command @code{trx-set-torrent-ratio} sets the seed ratio mode and limit for selected torrents.  It first prompts for a mode---@code{session} (use the global limit), @code{torrent} (use a torrent-specific limit), or @code{unlimited}---and then, if @code{torrent} is chosen, prompts for the numeric limit. @*
+The command @code{trx-set-torrent-ratio} sets the seed ratio mode and limit for selected torrents.  It first prompts for a mode---@code{session} (use the global limit), @code{torrent} (use a torrent-specific limit), or @code{unlimited}---and then, if @code{torrent} is chosen, prompts for the numeric limit.
 
-The command @code{trx-toggle-limits} toggles whether selected torrents honor session-level speed limits.  When a torrent honors session limits, both the session and torrent limits apply; otherwise, only the torrent's own limits are enforced. @*
+The command @code{trx-toggle-limits} toggles whether selected torrents honor session-level speed limits.  When a torrent honors session limits, both the session and torrent limits apply; otherwise, only the torrent's own limits are enforced.
 
 @node Bandwidth priority
 @section Bandwidth priority
 
 @findex trx-set-bandwidth-priority
-The command @code{trx-set-bandwidth-priority} sets the bandwidth priority for selected torrents.  It prompts with completion for one of three levels: @code{low}, @code{normal}, or @code{high}. @*
+The command @code{trx-set-bandwidth-priority} sets the bandwidth priority for selected torrents.  It prompts with completion for one of three levels: @code{low}, @code{normal}, or @code{high}.
 
 @node Queue management
 @section Queue management
@@ -422,20 +433,20 @@ The command @code{trx-set-bandwidth-priority} sets the bandwidth priority for se
 @findex trx-queue-move-bottom
 @findex trx-queue-move-up
 @findex trx-queue-move-down
-Transmission maintains a download queue.  Four commands control position within it: @*
+Transmission maintains a download queue.  Four commands control position within it:
 
 @itemize
 @item
-@code{trx-queue-move-top} moves selected torrents to the top of the queue. @*
+@code{trx-queue-move-top} moves selected torrents to the top of the queue.
 @item
-@code{trx-queue-move-bottom} moves them to the bottom. @*
+@code{trx-queue-move-bottom} moves them to the bottom.
 @item
-@code{trx-queue-move-up} moves them one position up. @*
+@code{trx-queue-move-up} moves them one position up.
 @item
-@code{trx-queue-move-down} moves them one position down. @*
+@code{trx-queue-move-down} moves them one position down.
 @end itemize
 
-Each command prompts for confirmation. @*
+Each command prompts for confirmation.
 
 @node Tracker management
 @section Tracker management
@@ -443,50 +454,50 @@ Each command prompts for confirmation. @*
 @findex trx-trackers-add
 @findex trx-trackers-remove
 @findex trx-trackers-replace
-The command @code{trx-trackers-add} adds announce URLs to selected torrents.  It offers completion from @code{trx-trackers} and from all announce URLs currently in use across the session, excluding trackers already present on the selected torrent.  You can enter multiple URLs; an empty input finishes the list. @*
+The command @code{trx-trackers-add} adds announce URLs to selected torrents.  It offers completion from @code{trx-trackers} and from all announce URLs currently in use across the session, excluding trackers already present on the selected torrent.  You can enter multiple URLs; an empty input finishes the list.
 
-The command @code{trx-trackers-remove} removes trackers from the torrent at point.  It displays each tracker's announce URL annotated with its numeric ID@.  You can select trackers by URL or by ID@. @*
+The command @code{trx-trackers-remove} removes trackers from the torrent at point.  It displays each tracker's announce URL annotated with its numeric ID@.  You can select trackers by URL or by ID@.
 
-The command @code{trx-trackers-replace} substitutes one tracker for another on the torrent at point.  It first prompts for the tracker to replace, then for the replacement URL@. @*
+The command @code{trx-trackers-replace} substitutes one tracker for another on the torrent at point.  It first prompts for the tracker to replace, then for the replacement URL@.
 
 @node Viewing torrent info
 @section Viewing torrent info
 
 @findex trx-info
-The command @code{trx-info} opens a @code{trx-info-mode} buffer for the torrent at point.  The buffer displays comprehensive metadata including: @*
+The command @code{trx-info} opens a @code{trx-info-mode} buffer for the torrent at point.  The buffer displays comprehensive metadata including:
 
 @itemize
 @item
-Torrent ID, name, info hash, and magnet link. @*
+Torrent ID, name, info hash, and magnet link.
 @item
-Labels, download location, percent done, bandwidth priority, and queue position. @*
+Labels, download location, percent done, bandwidth priority, and queue position.
 @item
-Current speed with per-torrent and session limit indicators. @*
+Current speed with per-torrent and session limit indicators.
 @item
-Seed ratio and ratio mode. @*
+Seed ratio and ratio mode.
 @item
-Error or warning messages, if any. @*
+Error or warning messages, if any.
 @item
-Peer summary: connected count, uploading/downloading counts, unchoked and interested peers, and peer origin breakdown (cache, DHT, incoming, LPD, LTEP, PEX, trackers). @*
+Peer summary: connected count, uploading/downloading counts, unchoked and interested peers, and peer origin breakdown (cache, DHT, incoming, LPD, LTEP, PEX, trackers).
 @item
-Dates: created, added, finished, and last activity. @*
+Dates: created, added, finished, and last activity.
 @item
-Per-tracker statistics: announce URL, tier, peer count, seeder/leecher/download counts, last and next announce/scrape times, and any error results. @*
+Per-tracker statistics: announce URL, tier, peer count, seeder/leecher/download counts, last and next announce/scrape times, and any error results.
 @item
-Size information: wanted, downloaded, verified, corrupt, and total sizes. @*
+Size information: wanted, downloaded, verified, corrupt, and total sizes.
 @item
-Piece data: count, completion percentage, piece size, and a visual representation controlled by @code{trx-pieces-function} (@ref{Pieces display}). @*
+Piece data: count, completion percentage, piece size, and a visual representation controlled by @code{trx-pieces-function} (@ref{Pieces display}).
 @end itemize
 
-Each torrent gets its own named buffer (e.g. @samp{*trx-info: Ubuntu 24.04*}), so you can view info for multiple torrents simultaneously.  The info buffer supports key bindings for setting per-torrent limits, adding/removing trackers, setting labels, copying the magnet link, and navigating to the file list or peer list. @*
+Each torrent gets its own named buffer (e.g. @samp{*trx-info: Ubuntu 24.04*}), so you can view info for multiple torrents simultaneously.  The info buffer supports key bindings for setting per-torrent limits, adding/removing trackers, setting labels, copying the magnet link, and navigating to the file list or peer list.
 
 @node Viewing torrent files
 @section Viewing torrent files
 
 @findex trx-files
-The command @code{trx-files} opens a @code{trx-files-mode} buffer for the torrent at point.  The tabulated list shows each file's completion percentage, priority (low/normal/high), wanted status, size, and name.  Files sharing a common directory prefix have the prefix stripped for readability. @*
+The command @code{trx-files} opens a @code{trx-files-mode} buffer for the torrent at point.  The tabulated list shows each file's completion percentage, priority (low/normal/high), wanted status, size, and name.  Files sharing a common directory prefix have the prefix stripped for readability.
 
-In both @code{trx-files-mode} and @code{trx-info-mode} buffers, @code{default-directory} is set to the torrent's download directory.  This means that commands like @code{eshell}, @code{dired}, and @code{shell-command} automatically start in the right location. @*
+In both @code{trx-files-mode} and @code{trx-info-mode} buffers, @code{default-directory} is set to the torrent's download directory.  This means that commands like @code{eshell}, @code{dired}, and @code{shell-command} automatically start in the right location.
 
 @menu
 * Toggling file download::
@@ -501,13 +512,13 @@ In both @code{trx-files-mode} and @code{trx-info-mode} buffers, @code{default-di
 
 @findex trx-files-want
 @findex trx-files-unwant
-The command @code{trx-files-want} tells Transmission to download selected files.  The command @code{trx-files-unwant} tells it to skip them.  Both operate on files at point, in the active region, or marked. @*
+The command @code{trx-files-want} tells Transmission to download selected files.  The command @code{trx-files-unwant} tells it to skip them.  Both operate on files at point, in the active region, or marked.
 
 @node Setting file priority
 @subsection Setting file priority
 
 @findex trx-files-priority
-The command @code{trx-files-priority} sets the bandwidth priority for selected files.  It prompts with completion for @code{low}, @code{normal}, or @code{high}. @*
+The command @code{trx-files-priority} sets the bandwidth priority for selected files.  It prompts with completion for @code{low}, @code{normal}, or @code{high}.
 
 @node Visiting and opening files
 @subsection Visiting and opening files
@@ -518,30 +529,30 @@ The command @code{trx-files-priority} sets the bandwidth priority for selected f
 @findex trx-view-file
 @findex trx-browse-url-of-file
 @findex trx-dired-file
-Several commands let you interact with downloaded files directly: @*
+Several commands let you interact with downloaded files directly:
 
 @itemize
 @item
-@code{trx-find-file} (@samp{RET}) visits the file at point in a read-only buffer. @*
+@code{trx-find-file} (@samp{RET}) visits the file at point in a read-only buffer.
 @item
-@code{trx-find-file-other-window} (@samp{o}) does the same in another window. @*
+@code{trx-find-file-other-window} (@samp{o}) does the same in another window.
 @item
-@code{trx-display-file} (@samp{C-o}) displays the file in another window without selecting it. @*
+@code{trx-display-file} (@samp{C-o}) displays the file in another window without selecting it.
 @item
-@code{trx-view-file} (@samp{v}) opens the file in View mode. @*
+@code{trx-view-file} (@samp{v}) opens the file in View mode.
 @item
-@code{trx-browse-url-of-file} (@samp{W}) opens the file in a web browser. @*
+@code{trx-browse-url-of-file} (@samp{W}) opens the file in a web browser.
 @item
-@code{trx-dired-file} (@samp{d}) opens the file's directory in Dired, with point on the file. @*
+@code{trx-dired-file} (@samp{d}) opens the file's directory in Dired, with point on the file.
 @end itemize
 
-If the file does not exist at its expected path, these commands also check for a @samp{.part} suffix (a Transmission convention for incomplete files). @*
+If the file does not exist at its expected path, these commands also check for a @samp{.part} suffix (a Transmission convention for incomplete files).
 
 @node Running commands on files
 @subsection Running commands on files
 
 @findex trx-files-command
-The command @code{trx-files-command} runs an external shell command on the file at point.  It uses @code{trx-files-command-functions} to suggest a default application based on the file's MIME type (@ref{External commands and GeoIP}).  The command is run asynchronously via @code{start-process}. @*
+The command @code{trx-files-command} runs an external shell command on the file at point.  It uses @code{trx-files-command-functions} to suggest a default application based on the file's MIME type (@ref{External commands and GeoIP}).  The command is run asynchronously via @code{start-process}.
 
 @node Copying and renaming files
 @subsection Copying and renaming files
@@ -550,23 +561,23 @@ The command @code{trx-files-command} runs an external shell command on the file 
 @findex trx-rename-path
 @findex trx-copy-filename-as-kill
 @findex trx-copy-magnet
-The command @code{trx-copy-file} copies the file at point to another location.  When @code{dired-dwim-target} is non-nil, the default target is the directory shown in the next window, mirroring Dired's behavior. @*
+The command @code{trx-copy-file} copies the file at point to another location.  When @code{dired-dwim-target} is non-nil, the default target is the directory shown in the next window, mirroring Dired's behavior.
 
-The command @code{trx-rename-path} renames a torrent file via the Transmission RPC@.  This updates the file's name within the torrent metadata, not just on disk.  After renaming, all open file-list buffers for the same torrent are automatically refreshed. @*
+The command @code{trx-rename-path} renames a torrent file via the Transmission RPC@.  This updates the file's name within the torrent metadata, not just on disk.  After renaming, all open file-list buffers for the same torrent are automatically refreshed.
 
-The command @code{trx-copy-filename-as-kill} copies the file name at point into the kill ring.  With a prefix argument, it copies the absolute path instead of just the base name. @*
+The command @code{trx-copy-filename-as-kill} copies the file name at point into the kill ring.  With a prefix argument, it copies the absolute path instead of just the base name.
 
-The command @code{trx-copy-magnet} copies the magnet link for the current torrent to the kill ring. @*
+The command @code{trx-copy-magnet} copies the magnet link for the current torrent to the kill ring.
 
 @node Viewing peers
 @section Viewing peers
 
 @findex trx-peers
-The command @code{trx-peers} opens a @code{trx-peers-mode} buffer for the torrent at point.  It displays a table of connected peers with columns for address, flags, progress, download rate, upload rate, client name, and location. @*
+The command @code{trx-peers} opens a @code{trx-peers-mode} buffer for the torrent at point.  It displays a table of connected peers with columns for address, flags, progress, download rate, upload rate, client name, and location.
 
-The flags column uses the same notation as @samp{transmission-remote(1)}; see the @uref{https://github.com/transmission/transmission/blob/main/docs/Peer-Status-Text.md, Peer Status Text} documentation for details. @*
+The flags column uses the same notation as @samp{transmission-remote(1)}; see the @uref{https://github.com/transmission/transmission/blob/main/docs/Peer-Status-Text.md, Peer Status Text} documentation for details.
 
-The location column is populated by @code{trx-geoip-function} (@ref{External commands and GeoIP}).  If no geolocation function is configured, the column is left blank. @*
+The location column is populated by @code{trx-geoip-function} (@ref{External commands and GeoIP}).  If no geolocation function is configured, the column is left blank.
 
 @node Marking items
 @section Marking items
@@ -574,15 +585,15 @@ The location column is populated by @code{trx-geoip-function} (@ref{External com
 @findex trx-toggle-mark
 @findex trx-unmark-all
 @findex trx-invert-marks
-Marks let you apply commands to multiple items at once.  Marked items are indicated with a @samp{>}  character in the left margin. @*
+Marks let you apply commands to multiple items at once.  Marked items are indicated with a @samp{>}  character in the left margin.
 
-The command @code{trx-toggle-mark} (@samp{m}) toggles the mark on the item at point.  If the region is active, it toggles all items in the region.  With a numeric prefix argument, it marks that many items forward (or backward if negative). @*
+The command @code{trx-toggle-mark} (@samp{m}) toggles the mark on the item at point.  If the region is active, it toggles all items in the region.  With a numeric prefix argument, it marks that many items forward (or backward if negative).
 
-The command @code{trx-unmark-all} (@samp{U}) removes all marks in the current buffer. @*
+The command @code{trx-unmark-all} (@samp{U}) removes all marks in the current buffer.
 
-The command @code{trx-invert-marks} (@samp{t}) toggles the mark on every item, switching marked items to unmarked and vice versa. @*
+The command @code{trx-invert-marks} (@samp{t}) toggles the mark on every item, switching marked items to unmarked and vice versa.
 
-When marks are active, commands such as @code{trx-toggle}, @code{trx-remove}, and the speed limit commands operate on all marked items.  The prompts indicate how many items are affected (e.g. @samp{[3 marked]}). @*
+When marks are active, commands such as @code{trx-toggle}, @code{trx-remove}, and the speed limit commands operate on all marked items.  The prompts indicate how many items are affected (e.g. @samp{[3 marked]}).
 
 @node Turtle mode
 @section Turtle mode
@@ -592,30 +603,30 @@ When marks are active, commands such as @code{trx-toggle}, @code{trx-remove}, an
 @findex trx-turtle-set-speeds
 @findex trx-turtle-set-days
 @findex trx-turtle-set-times
-Transmission's ``turtle mode'' (alternative speed limits) provides a way to throttle bandwidth during certain times.  @samp{trx.el} exposes this as the global minor mode @code{trx-turtle-mode}. @*
+Transmission's ``turtle mode'' (alternative speed limits) provides a way to throttle bandwidth during certain times.  @samp{trx.el} exposes this as the global minor mode @code{trx-turtle-mode}.
 
-Toggling @code{trx-turtle-mode} immediately enables or disables alternative speed limits on the daemon.  When active, the mode line shows the lighter (configured by @code{trx-turtle-lighter}; see @ref{Turtle mode appearance}) followed by the current down/up limits in kB/s (e.g. @samp{turtle:500/100}). @*
+Toggling @code{trx-turtle-mode} immediately enables or disables alternative speed limits on the daemon.  When active, the mode line shows the lighter (configured by @code{trx-turtle-lighter}; see @ref{Turtle mode appearance}) followed by the current down/up limits in kB/s (e.g. @samp{turtle:500/100}).
 
-A background polling mechanism keeps the mode-line indicator synchronized with the daemon's state and schedules.  When a turtle mode schedule changes the daemon's state (e.g. turtle mode is configured to activate on weekdays from 09:00 to 17:00), the mode line updates automatically. @*
+A background polling mechanism keeps the mode-line indicator synchronized with the daemon's state and schedules.  When a turtle mode schedule changes the daemon's state (e.g. turtle mode is configured to activate on weekdays from 09:00 to 17:00), the mode line updates automatically.
 
-The command @code{trx-turtle-status} messages a summary of the current turtle mode configuration: whether it is enabled, the speed limits, whether the schedule is enabled, the active time span, and the active days. @*
+The command @code{trx-turtle-status} messages a summary of the current turtle mode configuration: whether it is enabled, the speed limits, whether the schedule is enabled, the active time span, and the active days.
 
-The command @code{trx-turtle-set-speeds} prompts for new upload and download speed limits for turtle mode. @*
+The command @code{trx-turtle-set-speeds} prompts for new upload and download speed limits for turtle mode.
 
-The command @code{trx-turtle-set-days} sets which days of the week turtle mode's schedule is active.  The available day names are @code{sun}, @code{mon}, @code{tues}, @code{wed}, @code{thurs}, @code{fri}, @code{sat}, @code{weekday}, @code{weekend}, and @code{all}.  You can enter multiple days; an empty input finishes the list.  With a prefix argument, the schedule is disabled entirely. @*
+The command @code{trx-turtle-set-days} sets which days of the week turtle mode's schedule is active.  The available day names are @code{sun}, @code{mon}, @code{tues}, @code{wed}, @code{thurs}, @code{fri}, @code{sat}, @code{weekday}, @code{weekend}, and @code{all}.  You can enter multiple days; an empty input finishes the list.  With a prefix argument, the schedule is disabled entirely.
 
-The command @code{trx-turtle-set-times} sets the begin and end times for the turtle mode schedule.  Times are entered as human-readable strings (e.g. @samp{9:00} or @samp{5pm}) and parsed by @code{diary-entry-time}. @*
+The command @code{trx-turtle-set-times} sets the begin and end times for the turtle mode schedule.  Times are entered as human-readable strings (e.g. @samp{9:00} or @samp{5pm}) and parsed by @code{diary-entry-time}.
 
 @node Session statistics and free space
 @section Session statistics and free space
 
 @findex trx-stats
 @findex trx-free
-The command @code{trx-stats} displays a summary of the Transmission session in the echo area: current download and upload rates, active and total torrent counts, total data received and sent, and session uptime. @*
+The command @code{trx-stats} displays a summary of the Transmission session in the echo area: current download and upload rates, active and total torrent counts, total data received and sent, and session uptime.
 
-The torrent list mode line also shows a live summary: active/total torrent count and aggregate download/upload speeds (e.g. @samp{Trx 3/10 ↓42 ↑5}).  This updates automatically when the buffer refreshes. @*
+The torrent list mode line also shows a live summary: active/total torrent count and aggregate download/upload speeds (e.g. @samp{Trx 3/10 ↓42 ↑5}).  This updates automatically when the buffer refreshes.
 
-The command @code{trx-free} prompts for a directory and displays how much free space is available there, as reported by the Transmission daemon. @*
+The command @code{trx-free} prompts for a directory and displays how much free space is available there, as reported by the Transmission daemon.
 
 @node Daemon management
 @section Daemon management
@@ -624,20 +635,20 @@ The command @code{trx-free} prompts for a directory and displays how much free s
 @findex trx-daemon-stop
 @vindex trx-daemon-program
 @vindex trx-daemon-auto-start
-The command @code{trx-daemon-start} starts the Transmission daemon as a background process.  The command @code{trx-daemon-stop} sends a @samp{session-close} RPC request to shut it down gracefully. @*
+The command @code{trx-daemon-start} starts the Transmission daemon as a background process.  The command @code{trx-daemon-stop} sends a @samp{session-close} RPC request to shut it down gracefully.
 
-The user option @code{trx-daemon-program} specifies the daemon executable name (default: @code{"transmission-daemon"}). @*
+The user option @code{trx-daemon-program} specifies the daemon executable name (default: @code{"transmission-daemon"}).
 
-The user option @code{trx-daemon-auto-start}, when non-nil, causes @samp{trx} to automatically start the daemon when it cannot connect.  After starting the daemon, it waits briefly and retries the connection. @*
+The user option @code{trx-daemon-auto-start}, when non-nil, causes @samp{trx} to automatically start the daemon when it cannot connect.  After starting the daemon, it waits briefly and retries the connection.
 
 @node Quitting
 @section Quitting
 
 @findex trx-quit
-The command @code{trx-quit} buries or closes the current Trx buffer.  If the buffer was not previously displayed in the window, it calls @code{quit-window} (which restores the previous buffer).  If the frame has only one window, it buries the buffer; otherwise, it deletes the window. @*
+The command @code{trx-quit} buries or closes the current Trx buffer.  If the buffer was not previously displayed in the window, it calls @code{quit-window} (which restores the previous buffer).  If the frame has only one window, it buries the buffer; otherwise, it deletes the window.
 
 @findex trx-kill-torrent-buffers
-The command @code{trx-kill-torrent-buffers} kills all per-torrent detail buffers (file lists, info buffers, and peer lists) at once, providing a quick way to clean up after a session. @*
+The command @code{trx-kill-torrent-buffers} kills all per-torrent detail buffers (file lists, info buffers, and peer lists) at once, providing a quick way to clean up after a session.
 
 @node Functions
 @chapter Functions
@@ -655,19 +666,19 @@ The command @code{trx-kill-torrent-buffers} kills all per-torrent detail buffers
 @findex trx-ffap
 @findex trx-ffap-selection
 @findex trx-ffap-last-killed
-The function @code{trx-ffap} returns a file name, URL, or info hash at point.  It checks, in order: the @samp{shr-url} text property (for links in @samp{shr} buffers), the @samp{:nt-link} text property, @code{file-name-at-point-functions}, @code{thing-at-point-url-at-point}, and finally whether the word at point is a 40-character hexadecimal info hash.  It returns @code{nil} if nothing is found. @*
+The function @code{trx-ffap} returns a file name, URL, or info hash at point.  It checks, in order: the @samp{shr-url} text property (for links in @samp{shr} buffers), the @samp{:nt-link} text property, @code{file-name-at-point-functions}, @code{thing-at-point-url-at-point}, and finally whether the word at point is a 40-character hexadecimal info hash.  It returns @code{nil} if nothing is found.
 
-The function @code{trx-ffap-selection} applies @code{trx-ffap} to the current graphical selection (clipboard). @*
+The function @code{trx-ffap-selection} applies @code{trx-ffap} to the current graphical selection (clipboard).
 
-The function @code{trx-ffap-last-killed} applies @code{trx-ffap} to the most recent entry in @code{kill-ring}. @*
+The function @code{trx-ffap-last-killed} applies @code{trx-ffap} to the most recent entry in @code{kill-ring}.
 
-These functions are the defaults for @code{trx-torrent-functions} (@ref{Torrent guessing}) and can also be used in custom hooks or scripts. @*
+These functions are the defaults for @code{trx-torrent-functions} (@ref{Torrent guessing}) and can also be used in custom hooks or scripts.
 
 @node Geolocation
 @section Geolocation
 
 @findex trx-geoiplookup
-The function @code{trx-geoiplookup} translates an IP address into a country name by calling the external @samp{geoiplookup} program (or @samp{geoiplookup6} for IPv6 addresses).  It returns @code{nil} if the program is not installed.  This function is the built-in option for @code{trx-geoip-function} (@ref{External commands and GeoIP}). @*
+The function @code{trx-geoiplookup} translates an IP address into a country name by calling the external @samp{geoiplookup} program (or @samp{geoiplookup6} for IPv6 addresses).  It returns @code{nil} if the program is not installed.  This function is the built-in option for @code{trx-geoip-function} (@ref{External commands and GeoIP}).
 
 @node Formatting utilities
 @section Formatting utilities
@@ -675,25 +686,25 @@ The function @code{trx-geoiplookup} translates an IP address into a country name
 @findex trx-format-pieces
 @findex trx-format-pieces-brief
 @findex trx-group-digits
-The function @code{trx-format-pieces} renders a base64-encoded bitfield as a binary string, showing each piece as @samp{0} or @samp{1}, wrapped at 72 characters per line.  It is one of the built-in options for @code{trx-pieces-function}. @*
+The function @code{trx-format-pieces} renders a base64-encoded bitfield as a binary string, showing each piece as @samp{0} or @samp{1}, wrapped at 72 characters per line.  It is one of the built-in options for @code{trx-pieces-function}.
 
-The function @code{trx-format-pieces-brief} renders a bitfield as a compact greyscale bar.  It divides the pieces into 72 groups and represents each group's completion ratio as a single character or colored space, depending on the terminal's color capabilities. @*
+The function @code{trx-format-pieces-brief} renders a bitfield as a compact greyscale bar.  It divides the pieces into 72 groups and represents each group's completion ratio as a single character or colored space, depending on the terminal's color capabilities.
 
-The function @code{trx-group-digits} formats a positive integer with digit grouping according to @code{trx-digit-delimiter}.  Numbers below 10,000 are returned without grouping. @*
+The function @code{trx-group-digits} formats a positive integer with digit grouping according to @code{trx-digit-delimiter}.  Numbers below 10,000 are returned without grouping.
 
 @node RPC communication
 @section RPC communication
 
 @findex trx-request
 @findex trx-request-async
-The function @code{trx-request} sends a synchronous RPC request to the Transmission daemon and returns the parsed JSON response.  It handles session ID negotiation (409 responses), transient failures with one automatic retry, and connection pooling.  Most interactive commands use @code{trx-request-async} instead, but @code{trx-request} is available for scripting and non-interactive use. @*
+The function @code{trx-request} sends a synchronous RPC request to the Transmission daemon and returns the parsed JSON response.  It handles session ID negotiation (409 responses), transient failures with one automatic retry, and connection pooling.  Most interactive commands use @code{trx-request-async} instead, but @code{trx-request} is available for scripting and non-interactive use.
 
-The function @code{trx-request-async} sends an asynchronous RPC request.  Its first argument is a callback function that receives the parsed JSON response.  This is the preferred method for interactive commands, as it does not block Emacs while waiting for the daemon's reply. @*
+The function @code{trx-request-async} sends an asynchronous RPC request.  Its first argument is a callback function that receives the parsed JSON response.  This is the preferred method for interactive commands, as it does not block Emacs while waiting for the daemon's reply.
 
 @node Jackett search integration
 @chapter Jackett search integration
 
-The optional library @samp{trx-jackett.el} integrates with @uref{https://github.com/Jackett/Jackett, Jackett}, a proxy server that provides a unified search API across many torrent indexers.  It requires a running Jackett instance. @*
+The optional library @samp{trx-jackett.el} integrates with @uref{https://github.com/Jackett/Jackett, Jackett}, a proxy server that provides a unified search API across many torrent indexers.  It requires a running Jackett instance.
 
 @menu
 * Configuration::
@@ -709,28 +720,28 @@ The optional library @samp{trx-jackett.el} integrates with @uref{https://github.
 @vindex trx-jackett-api-key
 @vindex trx-jackett-use-tls
 @vindex trx-jackett-categories
-The user option @code{trx-jackett-host} and @code{trx-jackett-port} specify the Jackett server address (default: @code{localhost:9117}). @*
+The user option @code{trx-jackett-host} and @code{trx-jackett-port} specify the Jackett server address (default: @code{localhost:9117}).
 
-The user option @code{trx-jackett-api-key} is the API key for authentication.  If nil, it is resolved automatically in this order: @*
+The user option @code{trx-jackett-api-key} is the API key for authentication.  If nil, it is resolved automatically in this order:
 
 @enumerate
 @item
-Jackett's own @samp{ServerConfig.json} (checked in @samp{~/Library/Application Support/Jackett/}, @samp{~/.config/Jackett/}, and @samp{/var/lib/jackett/}). @*
+Jackett's own @samp{ServerConfig.json} (checked in @samp{~/Library/Application Support/Jackett/}, @samp{~/.config/Jackett/}, and @samp{/var/lib/jackett/}).
 @item
-@code{auth-source-search} using the host and port (e.g. from @samp{~/.authinfo.gpg}). @*
+@code{auth-source-search} using the host and port (e.g. from @samp{~/.authinfo.gpg}).
 @end enumerate
 
-In most cases no configuration is needed---the key is read directly from Jackett's config file. @*
+In most cases no configuration is needed---the key is read directly from Jackett's config file.
 
-The user option @code{trx-jackett-categories} is a list of Torznab category IDs to filter results.  Common categories: 2000 (Movies), 3000 (Audio), 5000 (TV), 7000 (Books).  When nil, all categories are searched. @*
+The user option @code{trx-jackett-categories} is a list of Torznab category IDs to filter results.  Common categories: 2000 (Movies), 3000 (Audio), 5000 (TV), 7000 (Books).  When nil, all categories are searched.
 
-The user option @code{trx-jackett-use-tls}, when non-nil, uses HTTPS@. @*
+The user option @code{trx-jackett-use-tls}, when non-nil, uses HTTPS@.
 
 @node Searching
 @section Searching
 
 @findex trx-jackett-search
-The command @code{trx-jackett-search} prompts for a query, searches all configured Jackett indexers, and displays results in a @code{trx-jackett-results-mode} buffer sorted by seeders.  Columns show seeders, leechers, size, age, tracker name, category, and title. @*
+The command @code{trx-jackett-search} prompts for a query, searches all configured Jackett indexers, and displays results in a @code{trx-jackett-results-mode} buffer sorted by seeders.  Columns show seeders, leechers, size, age, tracker name, category, and title.
 
 @node Working with results
 @section Working with results
@@ -739,37 +750,37 @@ The command @code{trx-jackett-search} prompts for a query, searches all configur
 @findex trx-jackett-browse-details
 @findex trx-jackett-copy-magnet
 @findex trx-jackett-search-again
-In the results buffer: @*
+In the results buffer:
 
 @itemize
 @item
-@code{RET} (@code{trx-jackett-add}) adds the torrent at point to Transmission via its magnet link or download URL@. @*
+@code{RET} (@code{trx-jackett-add}) adds the torrent at point to Transmission via its magnet link or download URL@.
 @item
-@code{b} (@code{trx-jackett-browse-details}) opens the torrent's details page in a web browser. @*
+@code{b} (@code{trx-jackett-browse-details}) opens the torrent's details page in a web browser.
 @item
-@code{c} (@code{trx-jackett-copy-magnet}) copies the magnet link to the kill ring. @*
+@code{c} (@code{trx-jackett-copy-magnet}) copies the magnet link to the kill ring.
 @item
-@code{s} (@code{trx-jackett-search-again}) runs a new search. @*
+@code{s} (@code{trx-jackett-search-again}) runs a new search.
 @end itemize
 
-Columns are sortable by clicking the header or pressing @code{S}. @*
+Columns are sortable by clicking the header or pressing @code{S}.
 
 @node Testing
 @chapter Testing
 
-The file @samp{trx-test.el} contains a comprehensive ERT test suite covering utility functions, formatting, data processing, HTTP/RPC response parsing, filtering, geoip caching, and constant validation.  Run the suite with: @*
+The file @samp{trx-test.el} contains a comprehensive ERT test suite covering utility functions, formatting, data processing, HTTP/RPC response parsing, filtering, geoip caching, and constant validation.  Run the suite with:
 
 @example
 make test
 @end example
 
-Or directly: @*
+Or directly:
 
 @example
 emacs --batch -l ert -l trx.el -l trx-test.el -f ert-run-tests-batch-and-exit
 @end example
 
-The tests do not require a running Transmission daemon.  They exercise all pure functions, verify HTTP status code handling with synthetic responses, and validate data structures. @*
+The tests do not require a running Transmission daemon.  They exercise all pure functions, verify HTTP status code handling with synthetic responses, and validate data structures.
 
 @node Indices
 @chapter Indices
