@@ -1534,7 +1534,11 @@ When called with a prefix UNLINK, also unlink torrent data on disk."
       (trx-request-async nil "torrent-set" arguments))))
 
 (defun trx-toggle-limits (ids)
-  "Toggle whether selected torrent(s) honor session speed limits."
+  "Toggle whether selected torrent(s) honor global session speed limits.
+When honored, the torrent is throttled by the session-wide download and
+upload caps set via `trx-set-download' and `trx-set-upload'.  When not
+honored, the torrent ignores those caps and only its own per-torrent
+limits apply."
   (trx-interactive (list ids))
   (when ids
     (trx-request-async
@@ -1542,8 +1546,13 @@ When called with a prefix UNLINK, also unlink torrent data on disk."
        (let ((honor (pcase (cdr (assq 'honorsSessionLimits
                                       (trx-current-torrent-from response)))
                       (:json-false t) (_ :json-false))))
-         (trx-request-async nil "torrent-set"
-                            `(:ids ,ids :honorsSessionLimits ,honor))))
+         (trx-request-async
+          (lambda (_)
+            (message "Session speed limits %s for %d torrent%s"
+                     (if (eq honor t) "honored" "ignored")
+                     (length ids) (if (cdr ids) "s" "")))
+          "torrent-set"
+          `(:ids ,ids :honorsSessionLimits ,honor))))
      "torrent-get" `(:ids ,ids :fields ["honorsSessionLimits"]))))
 
 (defun trx-toggle (ids)
