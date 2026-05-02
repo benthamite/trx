@@ -237,24 +237,28 @@ ServerConfig.json, and `auth-source'."
 
 (defun trx-jackett-add ()
   "Add the torrent at point to Transmission.
-Uses the magnet URI when available; otherwise downloads the
-.torrent file from the Jackett proxy link first."
+Uses the magnet URI when available; otherwise downloads the .torrent
+file from the Jackett proxy link first.  When the result's category
+matches an entry in `trx-category-directories', the torrent is added
+to the configured directory."
   (interactive)
   (let ((result (tabulated-list-get-id)))
     (unless result
       (user-error "No result at point"))
     (let-alist result
-      (cond
-       ((and .MagnetUri (not (equal .MagnetUri :null)))
-        (trx-add .MagnetUri))
-       ((and .Link (not (equal .Link :null)))
-        (trx-jackett--add-via-download .Link .Title))
-       (t (user-error "No magnet or download link"))))))
+      (let ((dir (trx-category-directory-for .CategoryDesc)))
+        (cond
+         ((and .MagnetUri (not (equal .MagnetUri :null)))
+          (trx-add .MagnetUri dir))
+         ((and .Link (not (equal .Link :null)))
+          (trx-jackett--add-via-download .Link .Title dir))
+         (t (user-error "No magnet or download link")))))))
 
-(defun trx-jackett--add-via-download (url title)
+(defun trx-jackett--add-via-download (url title dir)
   "Resolve URL and add the torrent to Transmission.
-Jackett proxy links may redirect to a magnet URI or a .torrent
-file.  TITLE is used for status messages."
+Jackett proxy links may redirect to a magnet URI or a .torrent file.
+TITLE is used for status messages.  DIR, if non-nil, is the download
+directory passed to `trx-add'."
   (message "Resolving \"%s\"..." title)
   (let ((output ""))
     (set-process-sentinel
@@ -269,24 +273,26 @@ file.  TITLE is used for status messages."
              (message "Failed to resolve torrent (exit %d)"
                       (process-exit-status process))
            (trx-jackett--add-resolved
-            (string-trim output) url title)))))))
+            (string-trim output) url title dir)))))))
 
-(defun trx-jackett--add-resolved (redirect-url original-url title)
+(defun trx-jackett--add-resolved (redirect-url original-url title dir)
   "Handle the resolved REDIRECT-URL from a Jackett proxy link.
-If it is a magnet URI, pass it to `trx-add'.  If it is an HTTP
-URL, download the .torrent file.  If empty, try ORIGINAL-URL
-directly.  TITLE is used for status messages."
+If it is a magnet URI, pass it to `trx-add'.  If it is an HTTP URL,
+download the .torrent file.  If empty, try ORIGINAL-URL directly.  TITLE
+is used for status messages.  DIR, if non-nil, is the download directory
+passed to `trx-add'."
   (cond
    ((string-prefix-p "magnet:" redirect-url)
-    (trx-add redirect-url))
+    (trx-add redirect-url dir))
    ((string-match-p "\\`https?://" redirect-url)
-    (trx-jackett--download-torrent-file redirect-url title))
+    (trx-jackett--download-torrent-file redirect-url title dir))
    (t
-    (trx-jackett--download-torrent-file original-url title))))
+    (trx-jackett--download-torrent-file original-url title dir))))
 
-(defun trx-jackett--download-torrent-file (url title)
+(defun trx-jackett--download-torrent-file (url title dir)
   "Download a .torrent file from URL and add it to Transmission.
-TITLE is used for status messages."
+TITLE is used for status messages.  DIR, if non-nil, is the download
+directory passed to `trx-add'."
   (let ((tmpfile (make-temp-file "trx-jackett-" nil ".torrent")))
     (message "Downloading \"%s\"..." title)
     (set-process-sentinel
@@ -298,7 +304,7 @@ TITLE is used for status messages."
              (delete-file tmpfile t)
              (message "Failed to download torrent (exit %d)"
                       (process-exit-status process)))
-         (trx-add tmpfile)
+         (trx-add tmpfile dir)
          (run-at-time 5 nil #'delete-file tmpfile t))))))
 
 (defun trx-jackett-browse-details ()

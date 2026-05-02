@@ -275,6 +275,9 @@ The user option @code{trx-incomplete-dir} specifies the directory for incomplete
 
 Setting this option via Customize or @code{setopt} pushes the new value to the running daemon, and @code{trx-refresh-session-cache} re-pushes it whenever the daemon's stored value drifts from the option.
 
+@vindex trx-category-directories
+The user option @code{trx-category-directories} maps source categories to download directories.  See @ref{Moving torrents} for the format and an example.
+
 @node Commands
 @chapter Commands
 
@@ -350,6 +353,20 @@ The command @code{trx-verify} asks Transmission to verify the integrity of selec
 
 @findex trx-move
 The command @code{trx-move} relocates selected torrents to a new directory.  It prompts for the target directory and asks for confirmation before sending the move request to the daemon.  The move is performed server-side, so the daemon must have write access to the target location.
+
+@findex trx-reclassify
+@vindex trx-category-directories
+The command @code{trx-reclassify} moves selected torrents to a directory chosen from @code{trx-category-directories}.  The user option @code{trx-category-directories} is an alist whose keys are either regexes matched (case-insensitively) against a torrent's source category, or the symbol @code{t} as a fallback when no regex matches; values are absolute directory paths.  When adding torrents from a Jackett results buffer (see @ref{Jackett search integration, , Jackett search}), @code{trx-jackett-add} consults the same option to choose the download directory based on the result's @code{CategoryDesc}.  Use @code{trx-reclassify} to override or correct an automatic classification: it prompts via completion over the configured keys (with each entry's directory shown as an annotation) and moves the torrent server-side via @code{torrent-set-location}.
+
+For example:
+
+@lisp
+(setopt trx-category-directories
+        '(("Movies" . "~/media/movies/")
+          ("TV"     . "~/media/tv/")
+          ("Audio"  . "~/media/music/")
+          (t        . "~/downloads/")))
+@end lisp
 
 @node Reannouncing
 @section Reannouncing
@@ -754,7 +771,7 @@ In the results buffer:
 
 @itemize
 @item
-@code{RET} (@code{trx-jackett-add}) adds the torrent at point to Transmission via its magnet link or download URL@.
+@code{RET} (@code{trx-jackett-add}) adds the torrent at point to Transmission via its magnet link or download URL@.  When the result's @code{CategoryDesc} matches an entry in @code{trx-category-directories} (see @ref{Moving torrents}), the torrent is added to the configured directory; otherwise it goes to the daemon's default download dir.
 @item
 @code{b} (@code{trx-jackett-browse-details}) opens the torrent's details page in a web browser.
 @item

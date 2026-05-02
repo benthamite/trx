@@ -273,6 +273,21 @@ This is a global Transmission session setting, not per-torrent."
          (when (and value (fboundp 'trx--apply-incomplete-dir))
            (trx--apply-incomplete-dir value))))
 
+(defcustom trx-category-directories nil
+  "Alist mapping category regex to download directory.
+Each entry has the form (KEY . DIRECTORY).  KEY is either a regex
+matched case-insensitively against the source category of a torrent
+\(such as the CategoryDesc field of a Jackett search result), or the
+symbol t which acts as a fallback when no regex entry matches.
+DIRECTORY is the absolute path to the download directory.
+
+Used by `trx-jackett-add' to choose the download directory for new
+torrents and by `trx-reclassify' to move existing torrents between
+configured directories."
+  :type '(alist :key-type (choice (regexp :tag "Category regex")
+                                  (const :tag "Fallback (no match)" t))
+                :value-type directory))
+
 (defcustom trx-files-command-functions '(mailcap-file-default-commands)
   "List of functions to use for guessing default applications.
 Each function should accept one argument, a list of file names,
@@ -1458,6 +1473,52 @@ When called with a prefix, prompt for DIRECTORY."
   (when ids
     (let ((arguments (list :ids ids :move t :location (expand-file-name location))))
       (trx-request-async nil "torrent-set-location" arguments))))
+
+(defun trx-reclassify (ids directory)
+  "Move torrent at point, in region, or marked to a categorized DIRECTORY.
+DIRECTORY is chosen interactively from `trx-category-directories'."
+  (trx-interactive
+   (let* ((entries (trx--reclassify-entries))
+          (annotation (trx--reclassify-annotation entries))
+          (completion-extra-properties (list :annotation-function annotation))
+          (choice (completing-read "Reclassify to: "
+                                   (mapcar #'car entries) nil t)))
+     (list ids (cdr (assoc choice entries)))))
+  (when (and ids directory)
+    (let ((dir (expand-file-name directory)))
+      (trx-request-async
+       (lambda (_)
+         (message "Moved %d torrent%s to %s"
+                  (length ids) (if (cdr ids) "s" "") dir))
+       "torrent-set-location"
+       `(:ids ,ids :move t :location ,dir)))))
+
+(defun trx--reclassify-entries ()
+  "Return `trx-category-directories' as a string-keyed alist."
+  (or (cl-loop for (k . v) in trx-category-directories
+               if (stringp k) collect (cons k v)
+               else if (eq k t) collect (cons "(default)" v))
+      (user-error "`trx-category-directories' is empty")))
+
+(defun trx--reclassify-annotation (entries)
+  "Return a `:annotation-function' showing each entry's directory.
+ENTRIES is a string-keyed alist as returned by `trx--reclassify-entries'."
+  (lambda (key)
+    (when-let ((dir (cdr (assoc key entries))))
+      (concat "  " (propertize (abbreviate-file-name dir)
+                               'face 'completions-annotations)))))
+
+(defun trx-category-directory-for (category)
+  "Return the configured directory matching CATEGORY, or nil.
+Consults `trx-category-directories' case-insensitively.  Falls back to
+the entry whose key is t when no regex matches."
+  (let ((case-fold-search t))
+    (or (cl-some (pcase-lambda (`(,key . ,dir))
+                   (and (stringp key) (stringp category)
+                        (string-match-p key category)
+                        dir))
+                 trx-category-directories)
+        (cdr (assq t trx-category-directories)))))
 
 (defun trx-reannounce (ids)
   "Reannounce torrent at point, marked, or in region."
@@ -2797,6 +2858,7 @@ for explanation of the peer flags."
     (define-key map "l" 'trx-set-ratio)
     (define-key map "m" 'trx-toggle-mark)
     (define-key map "r" 'trx-remove)
+    (define-key map "R" 'trx-reclassify)
     (define-key map "D" 'trx-delete)
     (define-key map "s" 'trx-toggle)
     (define-key map "t" 'trx-invert-marks)
@@ -2829,6 +2891,9 @@ for explanation of the peer flags."
      ["Set Torrent Upload Limit" trx-set-torrent-upload]
      ["Set Torrent Seed Ratio Limit" trx-set-torrent-ratio])
     ["Move Torrent" trx-move]
+    ["Reclassify Torrent" trx-reclassify
+     :help "Move torrent to a directory configured in \
+`trx-category-directories'."]
     ["Remove Torrent" trx-remove]
     ["Delete Torrent" trx-delete
      :help "Delete torrent contents from disk."]
