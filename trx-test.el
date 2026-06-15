@@ -1012,6 +1012,19 @@
   (should (equal '("video")
                  (trx-visible-labels ["video" "indexer:Pirate Bay"]))))
 
+(ert-deftest trx--display-width-no-pixel-function ()
+  "Fallback to `string-width' when pixel measurement is unavailable."
+  (let ((old-pixel-function (and (fboundp 'string-pixel-width)
+                                 (symbol-function 'string-pixel-width))))
+    (unwind-protect
+        (progn
+          (when old-pixel-function
+            (fmakunbound 'string-pixel-width))
+          (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _frame) t)))
+            (should (= (string-width "abc") (trx--display-width "abc")))))
+      (when old-pixel-function
+        (fset 'string-pixel-width old-pixel-function)))))
+
 (ert-deftest trx-tabulated-list-format-migrates-indexer-column ()
   "Existing TRX buffers get the Indexer column on refresh."
   (with-temp-buffer

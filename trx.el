@@ -1191,14 +1191,16 @@ FACE is applied as both `face' and `font-lock-face'."
 
 (defun trx--display-width (string)
   "Return the display width of STRING in character cells.
-Falls back to `string-width' on non-graphical frames.  On graphical
-frames, uses pixel width so glyphs that render wider than their
-declared `string-width' (e.g. U+221E in some fonts) are padded
-correctly."
-  (if (display-graphic-p)
+Falls back to `string-width' on non-graphical frames and Emacs versions
+without `string-pixel-width'.  On graphical frames, uses pixel width so
+glyphs that render wider than their declared `string-width' (e.g.
+U+221E in some fonts) are padded correctly."
+  (if (and (display-graphic-p) (fboundp 'string-pixel-width))
       (let ((char-w (frame-char-width)))
         (max (string-width string)
-             (/ (+ (string-pixel-width string) (1- char-w)) char-w)))
+             (/ (+ (funcall (symbol-function 'string-pixel-width) string)
+                   (1- char-w))
+                char-w)))
     (string-width string)))
 
 (defun trx--blend-color (fg bg ratio)
