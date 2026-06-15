@@ -249,16 +249,16 @@ to the configured directory."
       (let ((dir (trx-category-directory-for .CategoryDesc)))
         (cond
          ((and .MagnetUri (not (equal .MagnetUri :null)))
-          (trx-add .MagnetUri dir))
+          (trx-add .MagnetUri dir (trx-indexer-labels .Tracker)))
          ((and .Link (not (equal .Link :null)))
-          (trx-jackett--add-via-download .Link .Title dir))
+          (trx-jackett--add-via-download .Link .Title dir .Tracker))
          (t (user-error "No magnet or download link")))))))
 
-(defun trx-jackett--add-via-download (url title dir)
+(defun trx-jackett--add-via-download (url title dir tracker)
   "Resolve URL and add the torrent to Transmission.
 Jackett proxy links may redirect to a magnet URI or a .torrent file.
 TITLE is used for status messages.  DIR, if non-nil, is the download
-directory passed to `trx-add'."
+directory passed to `trx-add'.  TRACKER is the Jackett indexer name."
   (message "Resolving \"%s\"..." title)
   (let ((output ""))
     (set-process-sentinel
@@ -273,26 +273,26 @@ directory passed to `trx-add'."
              (message "Failed to resolve torrent (exit %d)"
                       (process-exit-status process))
            (trx-jackett--add-resolved
-            (string-trim output) url title dir)))))))
+            (string-trim output) url title dir tracker)))))))
 
-(defun trx-jackett--add-resolved (redirect-url original-url title dir)
+(defun trx-jackett--add-resolved (redirect-url original-url title dir tracker)
   "Handle the resolved REDIRECT-URL from a Jackett proxy link.
 If it is a magnet URI, pass it to `trx-add'.  If it is an HTTP URL,
 download the .torrent file.  If empty, try ORIGINAL-URL directly.  TITLE
 is used for status messages.  DIR, if non-nil, is the download directory
-passed to `trx-add'."
+passed to `trx-add'.  TRACKER is the Jackett indexer name."
   (cond
    ((string-prefix-p "magnet:" redirect-url)
-    (trx-add redirect-url dir))
+    (trx-add redirect-url dir (trx-indexer-labels tracker)))
    ((string-match-p "\\`https?://" redirect-url)
-    (trx-jackett--download-torrent-file redirect-url title dir))
+    (trx-jackett--download-torrent-file redirect-url title dir tracker))
    (t
-    (trx-jackett--download-torrent-file original-url title dir))))
+    (trx-jackett--download-torrent-file original-url title dir tracker))))
 
-(defun trx-jackett--download-torrent-file (url title dir)
+(defun trx-jackett--download-torrent-file (url title dir tracker)
   "Download a .torrent file from URL and add it to Transmission.
 TITLE is used for status messages.  DIR, if non-nil, is the download
-directory passed to `trx-add'."
+directory passed to `trx-add'.  TRACKER is the Jackett indexer name."
   (let ((tmpfile (make-temp-file "trx-jackett-" nil ".torrent")))
     (message "Downloading \"%s\"..." title)
     (set-process-sentinel
@@ -304,7 +304,7 @@ directory passed to `trx-add'."
              (delete-file tmpfile t)
              (message "Failed to download torrent (exit %d)"
                       (process-exit-status process)))
-         (trx-add tmpfile dir)
+         (trx-add tmpfile dir (trx-indexer-labels tracker))
          (run-at-time 5 nil #'delete-file tmpfile t))))))
 
 (defun trx-jackett-browse-details ()

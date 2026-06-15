@@ -376,6 +376,9 @@ caching built in or is otherwise slow."
    "percentDone" "sizeWhenDone" "metadataPercentComplete"
    "uploadRatio" "addedDate"])
 
+(defconst trx-indexer-label-prefix "indexer:"
+  "Prefix used for labels that store the original torrent indexer.")
+
 (defconst trx-draw-files-keys
   ["name" "files" "downloadDir" "wanted" "priorities"])
 
@@ -1398,9 +1401,10 @@ WINDOW with `window-start' and the line/column coordinates of `point'."
 ;; Interactive
 
 ;;;###autoload
-(defun trx-add (torrent &optional directory)
+(defun trx-add (torrent &optional directory labels)
   "Add TORRENT by filename, URL, magnet link, or info hash.
-When called with a prefix, prompt for DIRECTORY."
+When called with a prefix, prompt for DIRECTORY.
+LABELS is a list of labels to assign to the new torrent."
   (interactive
    (let* ((f (trx-collect-hook 'trx-torrent-functions))
           (def (mapcar #'file-relative-name f))
@@ -1431,7 +1435,8 @@ When called with a prefix, prompt for DIRECTORY."
              `(:filename ,(if (trx-btih-p torrent)
                               (concat "magnet:?xt=urn:btih:" torrent)
                             torrent)))
-           (when directory (list :download-dir (expand-file-name directory))))))
+           (when directory (list :download-dir (expand-file-name directory)))
+           (when labels (list :labels (vconcat labels))))))
 
 (defun trx--uri-like-p (string)
   "Return non-nil if STRING looks like a URI or magnet link."
@@ -2301,6 +2306,9 @@ indicates that the speed limit is enabled."
 
 (defun trx-tabulated-list-format (&optional _arg _noconfirm)
   "Initialize tabulated-list header or update `tabulated-list-format'."
+  (when (and (eq major-mode 'trx-mode)
+             (not (member "Indexer" (mapcar #'car (append tabulated-list-format nil)))))
+    (setq tabulated-list-format (trx-torrent-list-format)))
   (let ((idx (cl-loop for format across tabulated-list-format
                       if (plist-get (nthcdr 3 format) :trx-size)
                       return format))
@@ -2385,14 +2393,56 @@ matches labels; prefix `!' negates."
     (if (not (zerop .error)) (propertize "error" 'font-lock-face 'error)
       (trx-format-status .status .rateUpload .rateDownload))
     (propertize (trx-when .addedDate) 'font-lock-face 'trx-torrent-size)
+    (propertize (or (trx-indexer-label .labels) "")
+                'font-lock-face 'trx-torrent-label)
     (concat
      (propertize .name 'font-lock-face 'trx-torrent-name 'trx-name t)
      (mapconcat (lambda (l)
                   (concat " " (propertize l 'font-lock-face 'trx-torrent-label)))
-                .labels "")))
+                (trx-visible-labels .labels) "")))
   (tabulated-list-print)
   (trx--apply-fades)
   (trx--update-mode-line))
+
+(defun trx-indexer-label (labels)
+  "Return the original indexer name from LABELS."
+  (let ((label (cl-loop for label in (append labels nil)
+                        when (and (stringp label)
+                                  (string-prefix-p trx-indexer-label-prefix label))
+                        return label)))
+    (when label
+      (substring label (length trx-indexer-label-prefix)))))
+
+(defun trx-visible-labels (labels)
+  "Return LABELS excluding internal TRX labels."
+  (cl-loop for label in (append labels nil)
+           unless (and (stringp label)
+                       (string-prefix-p trx-indexer-label-prefix label))
+           collect label))
+
+(defun trx-indexer-make-label (indexer)
+  "Return the internal indexer label for INDEXER."
+  (when (and (stringp indexer) (not (string-empty-p indexer)))
+    (concat trx-indexer-label-prefix indexer)))
+
+(defun trx-indexer-labels (indexer)
+  "Return an indexer label list for INDEXER."
+  (when-let ((label (trx-indexer-make-label indexer)))
+    (list label)))
+
+(defun trx-torrent-list-format ()
+  "Return the torrent list column format."
+  (vector
+   (list "ETA" 4 'trx-eta>=? :right-align t)
+   (list "Size" 9 'trx-size-when-done>? :right-align t :trx-size t)
+   (list "Have" 4 'trx-percent-done>? :right-align t)
+   (list "Down" 4 nil :right-align t)
+   (list "Up" 3 nil :right-align t)
+   (list "Ratio" 5 'trx-ratio>? :right-align t)
+   (list "Status" 11 t)
+   (list "Added" 6 'trx-added>? :right-align t)
+   (list "Indexer" 14 t)
+   (list "Name" 0 t)))
 
 (defun trx--update-mode-line ()
   "Update `mode-name' with torrent count and total speeds."
@@ -2950,17 +3000,7 @@ Transmission."
   :group 'trx
   (setq-local line-move-visual nil)
   (setq-local trx-filter-active nil)
-  (setq tabulated-list-format
-        [("ETA" 4 trx-eta>=? :right-align t)
-         ("Size" 9 trx-size-when-done>?
-          :right-align t :trx-size t)
-         ("Have" 4 trx-percent-done>? :right-align t)
-         ("Down" 4 nil :right-align t)
-         ("Up" 3 nil :right-align t)
-         ("Ratio" 5 trx-ratio>? :right-align t)
-         ("Status" 11 t)
-         ("Added" 6 trx-added>? :right-align t)
-         ("Name" 0 t)])
+  (setq tabulated-list-format (trx-torrent-list-format))
   (setq tabulated-list-padding 1)
   (trx-tabulated-list-format)
   (setq tabulated-list-printer #'trx-print-torrent)

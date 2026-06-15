@@ -996,6 +996,51 @@
     (should-not (trx--update-mode-line))))
 
 
+;;;; Indexer labels
+
+(ert-deftest trx-indexer-label-indexer ()
+  "Indexer label is displayed without its prefix."
+  (should (equal "Pirate Bay"
+                 (trx-indexer-label ["video" "indexer:Pirate Bay"]))))
+
+(ert-deftest trx-indexer-label-none ()
+  "Missing indexer label returns nil."
+  (should-not (trx-indexer-label ["video"])))
+
+(ert-deftest trx-visible-labels-hides-indexer ()
+  "Internal indexer labels are hidden from the name column."
+  (should (equal '("video")
+                 (trx-visible-labels ["video" "indexer:Pirate Bay"]))))
+
+(ert-deftest trx-tabulated-list-format-migrates-indexer-column ()
+  "Existing TRX buffers get the Indexer column on refresh."
+  (with-temp-buffer
+    (trx-mode)
+    (setq tabulated-list-format
+          [("ETA" 4 trx-eta>=? :right-align t)
+           ("Size" 9 trx-size-when-done>? :right-align t :trx-size t)
+           ("Have" 4 trx-percent-done>? :right-align t)
+           ("Down" 4 nil :right-align t)
+           ("Up" 3 nil :right-align t)
+           ("Ratio" 5 trx-ratio>? :right-align t)
+           ("Status" 11 t)
+           ("Added" 6 trx-added>? :right-align t)
+           ("Name" 0 t)])
+    (trx-tabulated-list-format)
+    (should (equal '("ETA" "Size" "Have" "Down" "Up" "Ratio"
+                     "Status" "Added" "Indexer" "Name")
+                   (mapcar #'car (append tabulated-list-format nil))))))
+
+(ert-deftest trx-add-labels ()
+  "Labels are included when adding a torrent."
+  (let (arguments)
+    (cl-letf (((symbol-function 'trx-request-async)
+               (lambda (_callback _method args &optional _tag)
+                 (setq arguments args))))
+      (trx-add "magnet:?xt=urn:btih:abc" nil '("indexer:Pirate Bay")))
+    (should (equal ["indexer:Pirate Bay"] (plist-get arguments :labels)))))
+
+
 ;;;; Large value edge cases
 
 (ert-deftest trx-percent-large-values ()
@@ -1064,6 +1109,42 @@
           (trx-jackett-host "nonexistent.test")
           (trx-jackett-port 9117))
       (should-error (trx-jackett--api-key) :type 'user-error))))
+
+(ert-deftest trx-jackett-add-labels-indexer ()
+  "Adding a Jackett result labels the torrent with its indexer."
+  (let (torrent directory labels)
+    (cl-letf (((symbol-function 'tabulated-list-get-id)
+               (lambda ()
+                 '((MagnetUri . "magnet:?xt=urn:btih:abc")
+                   (Tracker . "Pirate Bay")
+                   (CategoryDesc . "Movies"))))
+              ((symbol-function 'trx-category-directory-for)
+               (lambda (_category) "/downloads/movies"))
+              ((symbol-function 'trx-add)
+               (lambda (input dir &optional new-labels)
+                 (setq torrent input
+                       directory dir
+                       labels new-labels))))
+      (trx-jackett-add))
+    (should (equal "magnet:?xt=urn:btih:abc" torrent))
+    (should (equal "/downloads/movies" directory))
+    (should (equal '("indexer:Pirate Bay") labels))))
+
+(ert-deftest trx-jackett-add-no-indexer-label ()
+  "Adding a Jackett result without tracker data does not add nil labels."
+  (let (labels)
+    (cl-letf (((symbol-function 'tabulated-list-get-id)
+               (lambda ()
+                 '((MagnetUri . "magnet:?xt=urn:btih:abc")
+                   (Tracker . :null)
+                   (CategoryDesc . "Movies"))))
+              ((symbol-function 'trx-category-directory-for)
+               (lambda (_category) nil))
+              ((symbol-function 'trx-add)
+               (lambda (_input _dir &optional new-labels)
+                 (setq labels new-labels))))
+      (trx-jackett-add))
+    (should-not labels)))
 
 (provide 'trx-test)
 
