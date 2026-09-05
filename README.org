@@ -684,6 +684,8 @@ Or directly:
 emacs --batch -l ert -l trx.el -l trx-test.el -f ert-run-tests-batch-and-exit
 #+end_example
 
+Run =make network-check= for delayed localhost RPC responses, nested timer refreshes in all four refresh modes, and interrupted connection cleanup.  This fixture refuses interactive loading: temporary RPC bindings would otherwise redirect unrelated background polls to its fake server.  The check runs in a clean batch Emacs and does not establish activation in an existing session.
+
 The tests do not require a running Transmission daemon.  They exercise all pure functions, verify HTTP status code handling with synthetic responses, and validate data structures.
 
 * Indices

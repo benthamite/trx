@@ -1,6 +1,6 @@
 EMACS ?= emacs
 
-.PHONY: test compile clean
+.PHONY: test network-check compile clean
 
 test:
 	$(EMACS) -Q --batch \
@@ -9,6 +9,9 @@ test:
 	  -l trx-jackett.el \
 	  -l trx-test.el \
 	  -f ert-run-tests-batch-and-exit
+
+network-check:
+	$(EMACS) -Q --batch -L . -l trx.el -l test/trx-network-check.el
 
 compile:
 	$(EMACS) -Q --batch \
