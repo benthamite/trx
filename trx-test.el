@@ -1159,6 +1159,125 @@
       (trx-jackett-add))
     (should-not labels)))
 
+;;;; Synchronous request and refresh lifecycle
+
+(ert-deftest trx-timer-revert-skips-nested-refresh ()
+  "A nested timer tick must not start a second refresh in any refresh mode."
+  (dolist (mode '(trx-mode trx-files-mode trx-info-mode trx-peers-mode))
+    (with-temp-buffer
+      (let ((major-mode mode)
+            (trx-refresh-modes (list mode))
+            (trx--consecutive-failures 0)
+            (calls 0))
+        (setq-local revert-buffer-function
+                    (lambda (&rest _)
+                      (cl-incf calls)
+                      (when (= calls 1) (trx-timer-revert))))
+        (trx-timer-revert)
+        (should (= calls 1))
+        (trx-timer-revert)
+        (should (= calls 2))))))
+
+(ert-deftest trx-timer-revert-releases-guard-after-nonlocal-exit ()
+  "An error or quit must not prevent subsequent automatic refreshes."
+  (dolist (condition '(error quit))
+    (with-temp-buffer
+      (let ((major-mode 'trx-mode)
+            (trx-refresh-modes '(trx-mode))
+            (trx--consecutive-failures 0)
+            (calls 0))
+        (setq-local revert-buffer-function
+                    (lambda (&rest _)
+                      (cl-incf calls)
+                      (when (= calls 1) (signal condition nil))))
+        (condition-case nil (trx-timer-revert) (quit nil))
+        (should-not trx--refresh-in-progress)
+        (trx-timer-revert)
+        (should (= calls 2))
+        (should (= trx--consecutive-failures 0))))))
+
+(ert-deftest trx-request-discards-interrupted-connection ()
+  "An interrupted RPC must not leave an unfinished response in the pool."
+  (let* ((buffer (generate-new-buffer " *trx-test-interrupted*"))
+         (process (make-pipe-process :name "trx-test-interrupted"
+                                     :buffer buffer :noquery t))
+         (trx-network-process-pool (list process)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'trx-get-network-process)
+                   (lambda () process))
+                  ((symbol-function 'trx-send)
+                   (lambda (&rest _) (signal 'quit nil))))
+          (should (eq 'quit (condition-case nil
+                                (trx-request "torrent-get")
+                              (quit 'quit))))
+          (should-not (process-live-p process))
+          (should-not (memq process trx-network-process-pool))
+          (should-not (buffer-live-p buffer)))
+      (when (process-live-p process) (delete-process process))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest trx-timer-revert-delayed-network-response ()
+  "A real timer tick during an RPC wait must not issue another request."
+  (with-temp-buffer
+    (let* ((target (current-buffer))
+           (major-mode 'trx-mode)
+           (trx-refresh-modes '(trx-mode))
+           (trx--consecutive-failures 0)
+           (trx-network-process-pool nil)
+           (trx-host "127.0.0.1")
+           (trx-rpc-auth nil)
+           (trx-use-tls nil)
+           (trx-daemon-auto-start nil)
+           (trx-request-timeout 2)
+           (requests 0)
+           (ticks 0)
+           timers clients response
+           (server
+            (make-network-process
+             :name "trx-test-server" :server t :host "127.0.0.1"
+             :service t :noquery t
+             :log (lambda (_server client _message) (push client clients))
+             :filter
+             (lambda (client text)
+               (process-put client :input
+                            (concat (process-get client :input) text))
+               (when (string-match-p "\r\n\r\n"
+                                     (process-get client :input))
+                 (process-put client :input nil)
+                 (cl-incf requests)
+                 (when (= requests 1)
+                   (push (run-at-time
+                          0 nil (lambda ()
+                                  (with-current-buffer target
+                                    (cl-incf ticks)
+                                    (trx-timer-revert))))
+                         timers))
+                 (push (run-at-time
+                        0.05 nil
+                        (lambda ()
+                          (when (process-live-p client)
+                            (let ((body "{\"result\":\"success\",\"arguments\":{\"ok\":true}}"))
+                              (process-send-string
+                               client
+                               (format "HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n%s"
+                                       (string-bytes body) body))))))
+                       timers)))))
+           (trx-service (process-contact server :service)))
+      (unwind-protect
+          (progn
+            (setq-local revert-buffer-function
+                        (lambda (&rest _)
+                          (setq response (trx-request "torrent-get"))))
+            (trx-timer-revert)
+            (should (= ticks 1))
+            (should (= requests 1))
+            (should (eq t (alist-get 'ok response))))
+        (mapc #'cancel-timer timers)
+        (trx--flush-pool)
+        (dolist (client clients)
+          (when (process-live-p client) (delete-process client)))
+        (delete-process server)))))
+
 (provide 'trx-test)
 
 ;;; trx-test.el ends here

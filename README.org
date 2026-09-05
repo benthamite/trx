@@ -64,6 +64,8 @@ The user option ~trx-use-tls~ controls whether the connection uses TLS.  Its def
 
 The user option ~trx-request-timeout~ sets the timeout in seconds for synchronous RPC requests.  The default is ~30~.  If the daemon is slow to respond (e.g. over a high-latency network), increase this value.
 
+Interrupted or unsuccessful synchronous requests discard their connection, so later requests cannot reuse an unfinished response.
+
 The user option ~trx-rpc-auth~ holds authentication credentials for the RPC interface.  Its value is either ~nil~ (no authentication, the default) or a plist with =:username= and optionally =:password= keys.  If no password is provided but a username is set, =trx.el= searches ~auth-sources~ using the username, ~trx-host~, and ~trx-service~ to find one.
 
 ** Display and formatting
@@ -111,6 +113,8 @@ The user option ~trx-refresh-modes~ is a list of major modes in which buffers sh
 #+end_src
 
 The user option ~trx-refresh-interval~ sets the period in seconds between automatic refreshes.  The default is ~2~.  The value must be positive.  After five consecutive refresh failures, the timer disables itself and displays a warning.
+
+Automatic refreshes do not overlap.  Timer ticks are skipped while an earlier automatic refresh is still waiting for a response, including while it is suspended in the debugger.
 
 ** Torrent guessing
 :PROPERTIES:

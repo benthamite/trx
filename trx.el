@@ -445,6 +445,9 @@ caching built in or is otherwise slow."
 (defvar trx--consecutive-failures 0
   "Count of consecutive refresh failures.")
 
+(defvar trx--refresh-in-progress nil
+  "Non-nil while a timer-driven refresh is running.")
+
 (defvar-local trx-filter-active nil
   "Active filter specification for the torrent list.
 When non-nil, a string that torrent names must match.")
@@ -592,7 +595,7 @@ When `trx-use-tls' is non-nil, the connection uses TLS."
                  (trx-make-network-process))
              (user-error "Cannot connect to Transmission at %s:%s -- %s"
                          trx-host trx-service (error-message-string err)))))
-      (when (process-live-p process) (kill-process process))
+      (when (process-live-p process) (delete-process process))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
 (defun trx-get-network-process ()
@@ -609,7 +612,7 @@ the pool."
 (defun trx--flush-pool ()
   "Kill all processes in `trx-network-process-pool' and reset it."
   (dolist (process trx-network-process-pool)
-    (when (process-live-p process) (kill-process process))
+    (when (process-live-p process) (delete-process process))
     (when (buffer-live-p (process-buffer process))
       (kill-buffer (process-buffer process))))
   (setq trx-network-process-pool nil))
@@ -627,7 +630,8 @@ Details regarding the Transmission RPC can be found here:
         (retries 1)
         result done)
     (while (not done)
-      (let ((process (trx-get-network-process)))
+      (let ((process (trx-get-network-process))
+            response-received)
         (set-process-plist process nil)
         (set-process-filter process nil)
         (set-process-sentinel process nil)
@@ -635,9 +639,11 @@ Details regarding the Transmission RPC can be found here:
             (condition-case err
                 (progn
                   (setq result (trx-send process content))
+                  (setq response-received t)
                   (setq done t))
               (trx-conflict
                (setq result (trx-send process content))
+               (setq response-received t)
                (setq done t))
               (trx-failure
                (message "%s" (cdr err))
@@ -654,7 +660,9 @@ Details regarding the Transmission RPC can be found here:
                           (error-message-string err))
                  (setq done t))))
           (when (and process (process-live-p process))
-            (stop-process process))
+            (if response-received
+                (stop-process process)
+              (delete-process process)))
           (when (and process (not (process-live-p process)))
             (setq trx-network-process-pool
                   (delq process trx-network-process-pool))
@@ -734,21 +742,24 @@ METHOD, ARGUMENTS, and TAG are the same as in `trx-request'."
 
 (defun trx-timer-revert ()
   "Revert the buffer or cancel `trx-timer'.
-After 5 consecutive failures, cancel the timer."
-  (if (and (memq major-mode trx-refresh-modes)
-           (not (or (bound-and-true-p isearch-mode)
-                    (buffer-narrowed-p)
-                    (use-region-p))))
-      (condition-case _err
-          (progn
-            (revert-buffer)
-            (setq trx--consecutive-failures 0))
-        (error
-         (cl-incf trx--consecutive-failures)
-         (when (>= trx--consecutive-failures 5)
-           (cancel-timer trx-timer)
-           (message "Trx: too many failures, auto-refresh disabled"))))
-    (cancel-timer trx-timer)))
+After 5 consecutive failures, cancel the timer.
+Skip timer ticks while an earlier automatic refresh is still running."
+  (unless trx--refresh-in-progress
+    (let ((trx--refresh-in-progress t))
+      (if (and (memq major-mode trx-refresh-modes)
+               (not (or (bound-and-true-p isearch-mode)
+                        (buffer-narrowed-p)
+                        (use-region-p))))
+          (condition-case _err
+              (progn
+                (revert-buffer)
+                (setq trx--consecutive-failures 0))
+            (error
+             (cl-incf trx--consecutive-failures)
+             (when (>= trx--consecutive-failures 5)
+               (cancel-timer trx-timer)
+               (message "Trx: too many failures, auto-refresh disabled"))))
+        (cancel-timer trx-timer)))))
 
 (defun trx-timer-run ()
   "Run the timer `trx-timer'."
