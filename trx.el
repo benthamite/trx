@@ -638,11 +638,11 @@ Details regarding the Transmission RPC can be found here:
         (unwind-protect
             (condition-case err
                 (progn
-                  (setq result (trx-send process content))
+                  (setq result (trx--send-for-refresh process content))
                   (setq response-received t)
                   (setq done t))
               (trx-conflict
-               (setq result (trx-send process content))
+               (setq result (trx--send-for-refresh process content))
                (setq response-received t)
                (setq done t))
               (trx-failure
@@ -669,6 +669,17 @@ Details regarding the Transmission RPC can be found here:
             (when (buffer-live-p (process-buffer process))
               (kill-buffer (process-buffer process)))))))
     result))
+
+(defun trx--send-for-refresh (process content)
+  "Send CONTENT to PROCESS, yielding to input during automatic refresh.
+Manual requests wait normally.  Interrupted automatic requests exit the
+refresh before rendering, through its `trx--refresh-interrupted' catch."
+  (if trx--refresh-in-progress
+      (let ((response (while-no-input (list (trx-send process content)))))
+        (if (consp response)
+            (car response)
+          (throw 'trx--refresh-interrupted nil)))
+    (trx-send process content)))
 
 
 ;; Asynchronous calls
@@ -743,7 +754,8 @@ METHOD, ARGUMENTS, and TAG are the same as in `trx-request'."
 (defun trx-timer-revert ()
   "Revert the buffer or cancel `trx-timer'.
 After 5 consecutive failures, cancel the timer.
-Skip timer ticks while an earlier automatic refresh is still running."
+Skip timer ticks while an earlier automatic refresh is still running.
+Yield to pending or arriving user input, abandoning any unfinished request."
   (unless trx--refresh-in-progress
     (let ((trx--refresh-in-progress t))
       (if (and (memq major-mode trx-refresh-modes)
@@ -751,9 +763,10 @@ Skip timer ticks while an earlier automatic refresh is still running."
                         (buffer-narrowed-p)
                         (use-region-p))))
           (condition-case _err
-              (progn
-                (revert-buffer)
-                (setq trx--consecutive-failures 0))
+              (catch 'trx--refresh-interrupted
+                (unless (input-pending-p)
+                  (revert-buffer)
+                  (setq trx--consecutive-failures 0)))
             (error
              (cl-incf trx--consecutive-failures)
              (when (>= trx--consecutive-failures 5)

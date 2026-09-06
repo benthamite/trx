@@ -116,6 +116,8 @@ The user option ~trx-refresh-interval~ sets the period in seconds between automa
 
 Automatic refreshes do not overlap.  Timer ticks are skipped while an earlier automatic refresh is still waiting for a response, including while it is suspended in the debugger.
 
+Automatic refresh yields to user input while waiting for a daemon response.  Pending input skips the refresh; input arriving during that wait abandons the request and discards its connection.  An interrupted refresh does not count as a failure, and the next timer tick can try again.  Manual refreshes still wait for the response.
+
 ** Torrent guessing
 :PROPERTIES:
 :CUSTOM_ID: h:torrent-guessing

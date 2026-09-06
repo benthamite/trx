@@ -1161,6 +1161,56 @@
 
 ;;;; Synchronous request and refresh lifecycle
 
+(ert-deftest trx-timer-revert-skips-pending-input ()
+  "Pending input must prevent automatic requests in every refresh mode."
+  (dolist (mode '(trx-mode trx-files-mode trx-info-mode trx-peers-mode))
+    (with-temp-buffer
+      (let ((major-mode mode)
+            (trx-refresh-modes (list mode))
+            (trx--consecutive-failures 2))
+        (setq-local revert-buffer-function
+                    (lambda (&rest _) (ert-fail "Refresh consumed input time")))
+        (cl-letf (((symbol-function 'input-pending-p) (lambda (&rest _) t)))
+          (trx-timer-revert))
+        (should (= trx--consecutive-failures 2))
+        (should-not trx--refresh-in-progress)))))
+
+(ert-deftest trx-timer-revert-input-abandons-request ()
+  "Input during an automatic RPC must discard it and allow the next tick."
+  (dolist (mode '(trx-mode trx-files-mode trx-info-mode trx-peers-mode))
+    (with-temp-buffer
+      (let* ((major-mode mode)
+             (trx-refresh-modes (list mode))
+             (trx--consecutive-failures 2)
+             (buffer (generate-new-buffer " *trx-test-input*"))
+             (process (make-pipe-process :name "trx-test-input"
+                                         :buffer buffer :noquery t))
+             (trx-network-process-pool (list process))
+             (calls 0))
+        (unwind-protect
+            (progn
+              (setq-local revert-buffer-function
+                          (lambda (&rest _)
+                            (cl-incf calls)
+                            (when (= calls 1) (trx-request "torrent-get"))))
+              (cl-letf (((symbol-function 'trx-get-network-process)
+                         (lambda () process))
+                        ((symbol-function 'trx-send)
+                         (lambda (&rest _)
+                           (should throw-on-input)
+                           (throw throw-on-input t))))
+                (trx-timer-revert))
+              (should (= trx--consecutive-failures 2))
+              (should-not trx--refresh-in-progress)
+              (should-not (process-live-p process))
+              (should-not (buffer-live-p buffer))
+              (should-not trx-network-process-pool)
+              (trx-timer-revert)
+              (should (= calls 2))
+              (should (zerop trx--consecutive-failures)))
+          (when (process-live-p process) (delete-process process))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
 (ert-deftest trx-timer-revert-skips-nested-refresh ()
   "A nested timer tick must not start a second refresh in any refresh mode."
   (dolist (mode '(trx-mode trx-files-mode trx-info-mode trx-peers-mode))

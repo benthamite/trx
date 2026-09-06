@@ -173,6 +173,8 @@ The user option @code{trx-use-tls} controls whether the connection uses TLS@.  I
 
 The user option @code{trx-request-timeout} sets the timeout in seconds for synchronous RPC requests.  The default is @code{30}.  If the daemon is slow to respond (e.g. over a high-latency network), increase this value.
 
+Interrupted or unsuccessful synchronous requests discard their connection, so later requests cannot reuse an unfinished response.
+
 The user option @code{trx-rpc-auth} holds authentication credentials for the RPC interface.  Its value is either @code{nil} (no authentication, the default) or a plist with @samp{:username} and optionally @samp{:password} keys.  If no password is provided but a username is set, @samp{trx.el} searches @code{auth-sources} using the username, @code{trx-host}, and @code{trx-service} to find one.
 
 @node Display and formatting
@@ -219,6 +221,10 @@ The user option @code{trx-refresh-modes} is a list of major modes in which buffe
 @end lisp
 
 The user option @code{trx-refresh-interval} sets the period in seconds between automatic refreshes.  The default is @code{2}.  The value must be positive.  After five consecutive refresh failures, the timer disables itself and displays a warning.
+
+Automatic refreshes do not overlap.  Timer ticks are skipped while an earlier automatic refresh is still waiting for a response, including while it is suspended in the debugger.
+
+Automatic refresh yields to user input while waiting for a daemon response.  Pending input skips the refresh; input arriving during that wait abandons the request and discards its connection.  An interrupted refresh does not count as a failure, and the next timer tick can try again.  Manual refreshes still wait for the response.
 
 @node Torrent guessing
 @section Torrent guessing
@@ -796,6 +802,8 @@ Or directly:
 @example
 emacs --batch -l ert -l trx.el -l trx-test.el -f ert-run-tests-batch-and-exit
 @end example
+
+Run @samp{make network-check} for delayed localhost RPC responses, nested timer refreshes in all four refresh modes, and interrupted connection cleanup.  This fixture refuses interactive loading: temporary RPC bindings would otherwise redirect unrelated background polls to its fake server.  The check runs in a clean batch Emacs and does not establish activation in an existing session.
 
 The tests do not require a running Transmission daemon.  They exercise all pure functions, verify HTTP status code handling with synthetic responses, and validate data structures.
 
