@@ -84,6 +84,10 @@ Common categories: 2000 (Movies), 3000 (Audio), 5000 (TV),
   "Whether to use HTTPS for the Jackett connection."
   :type 'boolean)
 
+(defcustom trx-jackett-search-timeout 120
+  "Maximum number of seconds to wait for a Jackett search."
+  :type 'natnum)
+
 (defvar trx-jackett-search-history nil
   "History list for Jackett searches.")
 
@@ -165,45 +169,80 @@ ServerConfig.json, and `auth-source'."
 
 (defun trx-jackett--fetch (url query)
   "Fetch search results from URL for QUERY."
-  (let* ((buf (generate-new-buffer " *trx-jackett*"))
-         (proc (condition-case nil
-                   (start-process "trx-jackett" buf "curl" "-s" "-f" url)
-                 (error (kill-buffer buf)
-                        (user-error "Cannot start curl")))))
-    (set-process-sentinel
-     proc
-     (lambda (process _event)
-       (let ((buf (process-buffer process)))
-         (if (not (zerop (process-exit-status process)))
-             (progn
-               (when (buffer-live-p buf) (kill-buffer buf))
-               (message "Jackett search failed (exit %d)"
-                        (process-exit-status process)))
-           (when (buffer-live-p buf)
+  (let ((output (generate-new-buffer " *trx-jackett*"))
+        (target (generate-new-buffer (format "*trx-search: %s*" query))))
+    (with-current-buffer target
+      (trx-jackett-results-mode)
+      (setq trx-jackett--query query)
+      (setq header-line-format (format "Searching Jackett for %S..." query)))
+    (pop-to-buffer target)
+    (condition-case err
+        (make-process
+         :name "trx-jackett" :buffer output :connection-type 'pipe
+         :command (list "curl" "-s" "-f" "--connect-timeout" "10"
+                        "--max-time" (number-to-string trx-jackett-search-timeout)
+                        url)
+         :sentinel
+         (lambda (process _event)
+           (when (memq (process-status process) '(exit signal))
              (unwind-protect
-                 (let* ((json-object-type 'alist)
-                        (json-array-type 'vector)
-                        (json-key-type 'symbol)
-                        (response (with-current-buffer buf
-                                    (goto-char (point-min))
-                                    (json-read)))
-                        (results (cdr (assq 'Results response))))
-                   (if (or (null results) (zerop (length results)))
-                       (message "No results for \"%s\"" query)
-                     (trx-jackett--display-results results query)))
-               (kill-buffer buf)))))))))
+                 (when (buffer-live-p target)
+                   (trx-jackett--finish-search process output target query))
+               (when (buffer-live-p output) (kill-buffer output))))))
+      (error
+       (kill-buffer output)
+       (trx-jackett--search-status
+        target (format "Cannot start Jackett search: %s"
+                       (error-message-string err)))))))
 
-(defun trx-jackett--display-results (results query)
-  "Display RESULTS from a search for QUERY in a results buffer."
-  (let ((buf (get-buffer-create (format "*trx-search: %s*" query))))
+(defun trx-jackett--finish-search (process output target query)
+  "Handle completed PROCESS with OUTPUT in TARGET for QUERY."
+  (let ((exit (process-exit-status process)))
+    (cond
+     ((= exit 28)
+      (trx-jackett--search-status target "Jackett search timed out"))
+     ((or (eq (process-status process) 'signal) (/= exit 0))
+      (trx-jackett--search-status
+       target (format "Jackett search failed (exit %d)" exit)))
+     (t
+      (condition-case nil
+          (let* ((json-object-type 'alist)
+                 (json-array-type 'vector)
+                 (json-key-type 'symbol)
+                 (response (with-current-buffer output
+                             (goto-char (point-min))
+                             (json-read)))
+                 (results (cdr (assq 'Results response))))
+            (unless (vectorp results)
+              (error "Invalid Jackett results"))
+            (trx-jackett--display-results results query target))
+        (error
+         (trx-jackett--search-status
+          target "Jackett search failed: cannot read or display results")))))))
+
+(defun trx-jackett--search-status (buffer status)
+  "Show persistent STATUS in BUFFER and the echo area."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (tabulated-list-init-header)
+      (setq header-line-format (list status "  |  " header-line-format))
+      (force-mode-line-update)))
+  (message "%s" status))
+
+(defun trx-jackett--display-results (results query &optional target)
+  "Display RESULTS from QUERY in TARGET or a new results buffer."
+  (let ((buf (or target (get-buffer-create (format "*trx-search: %s*" query)))))
     (with-current-buffer buf
       (trx-jackett-results-mode)
       (setq trx-jackett--results results)
       (setq trx-jackett--query query)
       (revert-buffer)
       (goto-char (point-min)))
-    (pop-to-buffer buf)
-    (message "%d results for \"%s\"" (length results) query)))
+    (unless target (pop-to-buffer buf))
+    (trx-jackett--search-status
+     buf (if (zerop (length results))
+             (format "No results for %S" query)
+           (format "%d results for %S" (length results) query)))))
 
 (defun trx-jackett--draw-results ()
   "Populate the results buffer from `trx-jackett--results'."

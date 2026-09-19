@@ -1159,6 +1159,42 @@
       (trx-jackett-add))
     (should-not labels)))
 
+(ert-deftest trx-jackett-search-visible-lifecycle ()
+  "Pending, empty, successful and failed searches keep visible status."
+  (dolist (case '((0 "{\"Results\":[]}" "No results")
+                  (0 "{\"Results\":[{\"Title\":\"Example\"}]}" "1 results")
+                  (0 "invalid JSON" "cannot read or display")
+                  (0 "{}" "cannot read or display")
+                  (28 "" "timed out")
+                  (22 "" "failed (exit 22)")))
+    (let (output target sentinel command)
+      (unwind-protect
+          (cl-letf (((symbol-function 'make-process)
+                     (lambda (&rest args)
+                       (setq output (plist-get args :buffer)
+                             sentinel (plist-get args :sentinel)
+                             command (plist-get args :command))
+                       'test-process))
+                    ((symbol-function 'pop-to-buffer)
+                     (lambda (buffer &rest _) (setq target buffer)))
+                    ((symbol-function 'process-status) (lambda (_) 'exit))
+                    ((symbol-function 'process-exit-status)
+                     (lambda (_) (car case))))
+            (trx-jackett--fetch "http://localhost/test" "fixture")
+            (with-current-buffer target
+              (should (string-match-p "Searching Jackett" header-line-format)))
+            (should (member "--max-time" command))
+            (with-current-buffer output (insert (nth 1 case)))
+            (funcall sentinel 'test-process "finished")
+            (should-not (buffer-live-p output))
+            (with-current-buffer target
+              (should (string-match-p (regexp-quote (nth 2 case))
+                                      (car header-line-format)))
+              (when (equal (nth 2 case) "1 results")
+                (should (string-match-p "Example" (buffer-string))))))
+        (when (buffer-live-p output) (kill-buffer output))
+        (when (buffer-live-p target) (kill-buffer target))))))
+
 ;;;; Synchronous request and refresh lifecycle
 
 (ert-deftest trx-timer-revert-skips-pending-input ()
