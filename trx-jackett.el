@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'json)
+(require 'xml)
 (require 'trx)
 
 (eval-when-compile
@@ -85,7 +86,7 @@ Common categories: 2000 (Movies), 3000 (Audio), 5000 (TV),
   :type 'boolean)
 
 (defcustom trx-jackett-search-timeout 120
-  "Maximum number of seconds to wait for a Jackett search."
+  "Maximum seconds to wait for each Jackett indexer or discovery request."
   :type 'natnum)
 
 (defvar trx-jackett-search-history nil
@@ -96,6 +97,12 @@ Common categories: 2000 (Movies), 3000 (Audio), 5000 (TV),
 
 (defvar-local trx-jackett--query nil
   "The search query that produced the current results.")
+
+(defvar-local trx-jackett--pending nil
+  "Names of indexers still being searched in the current buffer.")
+
+(defvar-local trx-jackett--failures nil
+  "Descriptions of failed indexers in the current search.")
 
 (defun trx-jackett--api-key ()
   "Return the Jackett API key.
@@ -168,17 +175,34 @@ ServerConfig.json, and `auth-source'."
   (trx-jackett--fetch (trx-jackett--url query) query))
 
 (defun trx-jackett--fetch (url query)
-  "Fetch search results from URL for QUERY."
-  (let ((output (generate-new-buffer " *trx-jackett*"))
-        (target (generate-new-buffer (format "*trx-search: %s*" query))))
+  "Discover indexers at URL and search each independently for QUERY."
+  (let ((target (generate-new-buffer (format "*trx-search: %s*" query))))
     (with-current-buffer target
       (trx-jackett-results-mode)
       (setq trx-jackett--query query)
       (setq header-line-format (format "Searching Jackett for %S..." query)))
     (pop-to-buffer target)
-    (condition-case err
+    (trx-jackett--request
+     (replace-regexp-in-string
+      (regexp-quote "/results?")
+      "/results/torznab/api?t=indexers&configured=true&" url t t)
+     target
+     (lambda (output failure)
+       (if failure
+           (trx-jackett--search-status
+            target (concat "Cannot discover Jackett indexers: " failure))
+         (condition-case nil
+             (trx-jackett--search-indexers output url target)
+           (error (trx-jackett--search-status
+                   target "Cannot read Jackett indexer list"))))))))
+
+(defun trx-jackett--request (url target callback)
+  "Request URL for TARGET and call CALLBACK with output buffer and failure.
+Exactly one argument to CALLBACK is non-nil.  Kill the output after it returns."
+  (let ((output (generate-new-buffer " *trx-jackett*")))
+    (condition-case nil
         (make-process
-         :name "trx-jackett" :buffer output :connection-type 'pipe
+         :name "trx-jackett" :buffer output :connection-type 'pipe :noquery t
          :command (list "curl" "-s" "-f" "--connect-timeout" "10"
                         "--max-time" (number-to-string trx-jackett-search-timeout)
                         url)
@@ -187,24 +211,51 @@ ServerConfig.json, and `auth-source'."
            (when (memq (process-status process) '(exit signal))
              (unwind-protect
                  (when (buffer-live-p target)
-                   (trx-jackett--finish-search process output target query))
+                   (let* ((exit (process-exit-status process))
+                          (failure
+                           (cond ((eq (process-status process) 'signal)
+                                  "request interrupted")
+                                 ((= exit 28) "timed out")
+                                 ((/= exit 0) (format "request failed (exit %d)" exit)))))
+                     (funcall callback (unless failure output) failure)))
                (when (buffer-live-p output) (kill-buffer output))))))
       (error
        (kill-buffer output)
-       (trx-jackett--search-status
-        target (format "Cannot start Jackett search: %s"
-                       (error-message-string err)))))))
+       (when (buffer-live-p target)
+         (funcall callback nil "cannot start curl"))))))
 
-(defun trx-jackett--finish-search (process output target query)
-  "Handle completed PROCESS with OUTPUT in TARGET for QUERY."
-  (let ((exit (process-exit-status process)))
-    (cond
-     ((= exit 28)
-      (trx-jackett--search-status target "Jackett search timed out"))
-     ((or (eq (process-status process) 'signal) (/= exit 0))
-      (trx-jackett--search-status
-       target (format "Jackett search failed (exit %d)" exit)))
-     (t
+(defun trx-jackett--search-indexers (output url target)
+  "Read indexers from OUTPUT and start searches using URL in TARGET."
+  (let* ((root (with-current-buffer output
+                 (car (xml-parse-region (point-min) (point-max)))))
+         (indexers (xml-get-children root 'indexer)))
+    (unless (eq (xml-node-name root) 'indexers)
+      (error "Invalid indexer list"))
+    (dolist (indexer indexers)
+      (unless (and (stringp (xml-get-attribute indexer 'id))
+                   (not (string-empty-p (xml-get-attribute indexer 'id))))
+        (error "Missing indexer ID")))
+    (with-current-buffer target
+      (setq trx-jackett--pending
+            (mapcar (lambda (indexer) (xml-get-attribute indexer 'id)) indexers)))
+    (if (null indexers)
+        (trx-jackett--search-status target "No configured Jackett indexers")
+      (trx-jackett--update-status target)
+      (dolist (indexer indexers)
+        (let ((id (xml-get-attribute indexer 'id)))
+          (trx-jackett--request
+           (replace-regexp-in-string
+            "/indexers/all/" (concat "/indexers/" (url-hexify-string id) "/")
+            url t t)
+           target
+           (lambda (buffer failure)
+             (trx-jackett--finish-indexer buffer failure target id))))))))
+
+(defun trx-jackett--finish-indexer (output failure target id)
+  "Merge OUTPUT or record FAILURE for indexer ID in TARGET."
+  (with-current-buffer target
+    (setq trx-jackett--pending (delete id trx-jackett--pending))
+    (unless failure
       (condition-case nil
           (let* ((json-object-type 'alist)
                  (json-array-type 'vector)
@@ -212,13 +263,34 @@ ServerConfig.json, and `auth-source'."
                  (response (with-current-buffer output
                              (goto-char (point-min))
                              (json-read)))
-                 (results (cdr (assq 'Results response))))
-            (unless (vectorp results)
-              (error "Invalid Jackett results"))
-            (trx-jackett--display-results results query target))
-        (error
-         (trx-jackett--search-status
-          target "Jackett search failed: cannot read or display results")))))))
+                 (results (alist-get 'Results response))
+                 (indexers (alist-get 'Indexers response)))
+            (unless (and (vectorp results) (vectorp indexers))
+              (error "Invalid Jackett response"))
+            (when (seq-some (lambda (indexer)
+                             (not (equal 2 (alist-get 'Status indexer))))
+                           indexers)
+              (setq failure "backend error"))
+            (setq trx-jackett--results (vconcat trx-jackett--results results))
+            (when (> (length results) 0)
+              (revert-buffer)))
+        (error (setq failure "cannot read or display results"))))
+    (when failure
+      (push (format "%s: %s" id failure) trx-jackett--failures))
+    (trx-jackett--update-status target)))
+
+(defun trx-jackett--update-status (target)
+  "Show accumulated results, pending indexers and failures in TARGET."
+  (with-current-buffer target
+    (trx-jackett--search-status
+     target
+     (concat
+      (format "%d results for %S" (length trx-jackett--results) trx-jackett--query)
+      (if trx-jackett--pending
+          (concat "; waiting for " (string-join trx-jackett--pending ", "))
+        "; search complete")
+      (when trx-jackett--failures
+        (concat "; failed: " (string-join (reverse trx-jackett--failures) "; ")))))))
 
 (defun trx-jackett--search-status (buffer status)
   "Show persistent STATUS in BUFFER and the echo area."
@@ -267,7 +339,7 @@ ServerConfig.json, and `auth-source'."
                                        'face 'trx-jackett-title)))
                      entries)))
     (setq tabulated-list-entries (nreverse entries))
-    (tabulated-list-print)
+    (tabulated-list-print t)
     (trx--apply-fades)))
 
 (defun trx-jackett-results-revert (_arg _noconfirm)

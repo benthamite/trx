@@ -651,7 +651,7 @@ The user option ~trx-jackett-use-tls~, when non-nil, uses HTTPS.
 #+findex: trx-jackett-search
 The command ~trx-jackett-search~ prompts for a query, searches all configured Jackett indexers, and displays results in a ~trx-jackett-results-mode~ buffer sorted by seeders.  Columns show seeders, leechers, size, age, tracker name, category, and title.
 
-A results buffer opens immediately and shows the search status in its header.  Empty results and failures remain visible there.  Each search has its own buffer, so overlapping searches cannot overwrite one another.  Searches time out after ~trx-jackett-search-timeout~ seconds (default: 120); Jackett may wait for slow indexers before returning any results.
+A results buffer opens immediately and shows the search status in its header.  Empty results and failures remain visible there.  Each search has its own buffer, so overlapping searches cannot overwrite one another.  Each configured indexer is searched independently, and its results appear as soon as it responds.  The header names pending and failed indexers; a slow or failing site cannot hold back results from other sites.  Each indexer request times out after ~trx-jackett-search-timeout~ seconds (default: 120).
 
 ** Working with results
 :PROPERTIES:

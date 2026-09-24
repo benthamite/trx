@@ -1159,40 +1159,142 @@
       (trx-jackett-add))
     (should-not labels)))
 
-(ert-deftest trx-jackett-search-visible-lifecycle ()
-  "Pending, empty, successful and failed searches keep visible status."
-  (dolist (case '((0 "{\"Results\":[]}" "No results")
-                  (0 "{\"Results\":[{\"Title\":\"Example\"}]}" "1 results")
-                  (0 "invalid JSON" "cannot read or display")
-                  (0 "{}" "cannot read or display")
-                  (28 "" "timed out")
-                  (22 "" "failed (exit 22)")))
-    (let (output target sentinel command)
+(ert-deftest trx-jackett-search-independent-indexers ()
+  "Fast results remain usable while slow and failing indexers finish."
+  (let (requests target)
+    (unwind-protect
+        (cl-letf (((symbol-function 'make-process)
+                   (lambda (&rest args) (push args requests) 'test-process))
+                  ((symbol-function 'pop-to-buffer)
+                   (lambda (buffer &rest _) (setq target buffer)))
+                  ((symbol-function 'process-status) (lambda (_) 'exit))
+                  ((symbol-function 'process-exit-status) (lambda (_) 0)))
+          (trx-jackett--fetch
+           "http://localhost/api/v2.0/indexers/all/results?apikey=test&Query=matrix"
+           "matrix")
+          (let ((discovery (pop requests)))
+            (should (string-match-p
+                     (regexp-quote "/results/torznab/api?t=indexers&configured=true&")
+                     (car (last (plist-get discovery :command)))))
+            (with-current-buffer (plist-get discovery :buffer)
+              (insert "<indexers><indexer id=\"slow\"/><indexer id=\"fast\"/></indexers>"))
+            (funcall (plist-get discovery :sentinel) 'test-process "finished")
+            (should-not (buffer-live-p (plist-get discovery :buffer))))
+          (should (= 2 (length requests)))
+          (let ((fast (pop requests)))
+            (should (string-match-p "/indexers/fast/results?"
+                                    (car (last (plist-get fast :command)))))
+            (with-current-buffer (plist-get fast :buffer)
+              (insert "{\"Results\":[{\"Title\":\"The Matrix\"}],\"Indexers\":[{\"Status\":2}]}"))
+            (funcall (plist-get fast :sentinel) 'test-process "finished"))
+          (with-current-buffer target
+            (should (= 1 (length trx-jackett--results)))
+            (should (string-match-p "The Matrix" (buffer-string)))
+            (should (string-match-p "waiting for slow" (car header-line-format)))
+            (should-not (string-match-p "complete" (car header-line-format))))
+          (let ((slow (pop requests)))
+            (cl-letf (((symbol-function 'process-exit-status) (lambda (_) 28)))
+              (funcall (plist-get slow :sentinel) 'test-process "finished")))
+          (with-current-buffer target
+            (should (= 1 (length trx-jackett--results)))
+            (should (string-match-p "The Matrix" (buffer-string)))
+            (should (string-match-p "search complete" (car header-line-format)))
+            (should (string-match-p "slow: timed out" (car header-line-format)))))
+      (dolist (request requests)
+        (when (buffer-live-p (plist-get request :buffer))
+          (kill-buffer (plist-get request :buffer))))
+      (when (buffer-live-p target) (kill-buffer target)))))
+
+(ert-deftest trx-jackett-indexer-outcomes ()
+  "Distinguish backend errors, bad responses and successful empty searches."
+  (dolist (case '(("{\"Results\":[],\"Indexers\":[{\"Status\":2}]}" nil)
+                  ("{\"Results\":[],\"Indexers\":[]}" nil)
+                  ("{\"Results\":[],\"Indexers\":[{\"Status\":1}]}" "backend error")
+                  ("{\"Results\":[],\"Indexers\":[{\"Status\":0}]}" "backend error")
+                  ("{\"Results\":[]}" "cannot read or display")
+                  ("invalid JSON" "cannot read or display")))
+    (with-temp-buffer
+      (trx-jackett-results-mode)
+      (setq trx-jackett--query "fixture" trx-jackett--pending '("test"))
+      (let ((target (current-buffer)))
+        (with-temp-buffer
+          (insert (car case))
+          (trx-jackett--finish-indexer (current-buffer) nil target "test")))
+      (should-not trx-jackett--pending)
+      (should (string-match-p "search complete" (car header-line-format)))
+      (if (cadr case)
+          (should (string-match-p (cadr case) (car header-line-format)))
+        (should-not trx-jackett--failures)))))
+
+(ert-deftest trx-jackett-incoming-results-preserve-selection ()
+  "Inserting a higher-seeded result must not change the selected torrent."
+  (with-temp-buffer
+    (trx-jackett-results-mode)
+    (setq trx-jackett--query "matrix" trx-jackett--pending '("first" "second"))
+    (let ((target (current-buffer)))
+      (with-temp-buffer
+        (insert "{\"Results\":[{\"Title\":\"Selected\",\"Seeders\":1}],\"Indexers\":[{\"Status\":2}]}")
+        (trx-jackett--finish-indexer (current-buffer) nil target "first"))
+      (goto-char (point-min))
+      (let ((selected (tabulated-list-get-id)))
+        (should (equal "Selected" (alist-get 'Title selected)))
+        (with-temp-buffer
+          (insert "{\"Results\":[{\"Title\":\"New\",\"Seeders\":100}],\"Indexers\":[{\"Status\":2}]}")
+          (trx-jackett--finish-indexer (current-buffer) nil target "second"))
+        (should (equal selected (tabulated-list-get-id)))
+        (should (= 2 (length trx-jackett--results)))
+        (save-excursion
+          (goto-char (point-min))
+          (should (equal "New" (alist-get 'Title (tabulated-list-get-id)))))))))
+
+(ert-deftest trx-jackett-request-failure-cleanup ()
+  "Transport failures notify once and release their output buffers."
+  (dolist (exit '(0 22 28))
+    (with-temp-buffer
+      (let (output sentinel received)
+        (cl-letf (((symbol-function 'make-process)
+                   (lambda (&rest args)
+                     (setq output (plist-get args :buffer)
+                           sentinel (plist-get args :sentinel))
+                     'test-process))
+                  ((symbol-function 'process-status) (lambda (_) 'exit))
+                  ((symbol-function 'process-exit-status) (lambda (_) exit)))
+          (trx-jackett--request
+           "http://localhost/test" (current-buffer)
+           (lambda (buffer failure) (push (list buffer failure) received)))
+          (funcall sentinel 'test-process "finished")
+          (should (= 1 (length received)))
+          (should (eq (zerop exit) (not (null (caar received)))))
+          (should-not (buffer-live-p output))))))
+  (with-temp-buffer
+    (let (output received)
+      (cl-letf (((symbol-function 'make-process)
+                 (lambda (&rest args)
+                   (setq output (plist-get args :buffer))
+                   (error "No curl"))))
+        (trx-jackett--request
+         "http://localhost/test" (current-buffer)
+         (lambda (_buffer failure) (setq received failure))))
+      (should (equal "cannot start curl" received))
+      (should-not (buffer-live-p output)))))
+
+(ert-deftest trx-jackett-discovery-errors ()
+  "Discovery failures and empty configurations remain visible."
+  (dolist (body '("<indexers/>" "{}" "<indexers><indexer/></indexers>"))
+    (let (target)
       (unwind-protect
-          (cl-letf (((symbol-function 'make-process)
-                     (lambda (&rest args)
-                       (setq output (plist-get args :buffer)
-                             sentinel (plist-get args :sentinel)
-                             command (plist-get args :command))
-                       'test-process))
-                    ((symbol-function 'pop-to-buffer)
+          (cl-letf (((symbol-function 'pop-to-buffer)
                      (lambda (buffer &rest _) (setq target buffer)))
-                    ((symbol-function 'process-status) (lambda (_) 'exit))
-                    ((symbol-function 'process-exit-status)
-                     (lambda (_) (car case))))
-            (trx-jackett--fetch "http://localhost/test" "fixture")
+                    ((symbol-function 'trx-jackett--request)
+                     (lambda (_url _target callback)
+                       (with-temp-buffer
+                         (insert body)
+                         (funcall callback (current-buffer) nil)))))
+            (trx-jackett--fetch "http://localhost/results?apikey=test" "fixture")
             (with-current-buffer target
-              (should (string-match-p "Searching Jackett" header-line-format)))
-            (should (member "--max-time" command))
-            (with-current-buffer output (insert (nth 1 case)))
-            (funcall sentinel 'test-process "finished")
-            (should-not (buffer-live-p output))
-            (with-current-buffer target
-              (should (string-match-p (regexp-quote (nth 2 case))
-                                      (car header-line-format)))
-              (when (equal (nth 2 case) "1 results")
-                (should (string-match-p "Example" (buffer-string))))))
-        (when (buffer-live-p output) (kill-buffer output))
+              (should (string-match-p
+                       (if (equal body "<indexers/>") "No configured" "Cannot read")
+                       (car header-line-format)))))
         (when (buffer-live-p target) (kill-buffer target))))))
 
 ;;;; Synchronous request and refresh lifecycle
