@@ -2660,7 +2660,7 @@ a vector of column descriptors."
           (cond
            ((= n (1- ncols))
             (insert (trx--truncate
-                     label (- (window-width) x 1) face)))
+                     label (trx--last-column-width x) face)))
            (right-align
             (let ((shift (- width label-width)))
               (when (> shift 0) (insert (make-string shift ?\s)))
@@ -2675,6 +2675,17 @@ a vector of column descriptors."
     (insert ?\n)
     (put-text-property beg (point) 'tabulated-list-id id))
   (trx--print-torrent-mark id))
+
+(defun trx--last-column-width (x)
+  "Return the width available to a last column that starts at column X.
+Measure the window displaying the current buffer, which need not be the
+selected window when an asynchronous refresh redraws it.  When no window
+displays the buffer, return `most-positive-fixnum' so the column is not
+truncated to the size of an unrelated window."
+  (let ((window (get-buffer-window nil t)))
+    (if window
+        (- (window-width window) x 1)
+      most-positive-fixnum)))
 
 (defun trx--print-torrent-mark (id)
   "Put the mark tag on the current line if ID is marked."

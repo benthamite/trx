@@ -4,11 +4,11 @@
 
 The comprehensive manual for =trx.el= is in [[file:../README.org][README.org]] at the repository root.
 
-The ERT test suite (168 tests) is in =trx-test.el=.  Run it with =make test=.
+The ERT test suite (189 tests) is in =trx-test.el=.  Run it with =make test=.
 
 Jackett search integration is provided by =trx-jackett.el= (requires a running Jackett instance and =curl=).  The API key is auto-discovered from Jackett's =ServerConfig.json=.  Per-column faces and fade-out truncation apply to all tabulated-list buffers.  The torrent list auto-refreshes after remove and delete operations.
 
-Bug fixes: =trx-files-file-at-point= now correctly signals an error for non-existent files; =trx-turtle-when= computes correct wrap-around times for schedules spanning midnight; =trx-draw-files= handles both boolean and numeric =wanted= values from the Transmission RPC; =trx-jackett--url= URL-encodes the API key; =trx-jackett--fetch= cleans up its buffer if =curl= cannot be started.
+Bug fixes: =trx-files-file-at-point= now correctly signals an error for non-existent files; =trx-turtle-when= computes correct wrap-around times for schedules spanning midnight; =trx-draw-files= handles both boolean and numeric =wanted= values from the Transmission RPC; =trx-jackett--url= URL-encodes the API key; =trx-jackett--fetch= cleans up its buffer if =curl= cannot be started.  =trx-print-torrent= sizes the last column from the window displaying the buffer rather than the selected window, and leaves it untruncated when the buffer is not displayed, so asynchronous refreshes no longer cut titles to an unrelated window's width.
 
 Structural: =trx-current-torrent= and =trx-current-torrent-from= centralize access to the current torrent alist.  =trx-set-torrent-download= and =trx-set-torrent-upload= share a common =trx--set-torrent-speed-limit= helper.
 

@@ -1159,6 +1159,38 @@
       (trx-jackett-add))
     (should-not labels)))
 
+(ert-deftest trx-jackett-undisplayed-results-keep-full-title ()
+  "An undisplayed results buffer is not truncated to the selected window."
+  (let ((title (make-string 200 ?t)))
+    (with-temp-buffer
+      (trx-jackett-results-mode)
+      (setq trx-jackett--results (vector `((Title . ,title))))
+      (trx-jackett--draw-results)
+      (should (string-match-p (regexp-quote title) (buffer-string))))))
+
+(ert-deftest trx-jackett-results-truncate-to-displaying-window ()
+  "The title column fits the window showing the results, not the selected one."
+  (let ((title (make-string 200 ?t))
+        (buffer (generate-new-buffer "*trx-width-test*"))
+        (frame-width (frame-width)))
+    (save-window-excursion
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (set-frame-width nil 100)
+            (let ((results (split-window nil 10 t)))
+              (set-window-buffer results buffer)
+              (with-current-buffer buffer
+                (trx-jackett-results-mode)
+                (setq trx-jackett--results (vector `((Title . ,title))))
+                (trx-jackett--draw-results)
+                (goto-char (point-min))
+                (should (= (1- (window-width results))
+                           (- (line-end-position) (point))))
+                (should (search-forward "ttt" (line-end-position) t)))))
+        (set-frame-width nil frame-width)
+        (kill-buffer buffer)))))
+
 (ert-deftest trx-jackett-search-independent-indexers ()
   "Fast results remain usable while slow and failing indexers finish."
   (let (requests target)
